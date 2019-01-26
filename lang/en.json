@@ -1,0 +1,7 @@
+{
+	"m_title":"Bridge4KT",
+	"m_descr":"<small><div style='color: gray'>This App was inspired and is conceptually based on the work of Andreas Freud and his <b>Apple HomeKit Bridge</b>.</small></div><br>The Apple HomeKit protocol allows controlling HomeKit compatible devices from Apple iOS devices (iPhone, iPad). Activating this option your Z-Way gateway will be recognized as HomeKit Bridge. Your Z-Wave devices are mapped into the Homekit world and can be controlled using third party HomeKit apps on the given platforms as well as in the native iOS widget.<br><br><b>DISCLAIMER</b>: Please note that this bridge functions comes without any warranty. Apple has frequently changed the policy to use HomeKit. Some iOS versions may accept the bridge, some may warn because your hardware lacks the required Apple MFI (Manufactured for iPhone) authentication chip but still allow access and some iOS version may even deny the access. Try with fun yet at your own risk.<br><br>Further documentation is available in the <a href='https://github.com/ralphwetzel/bridge4kt'>GitHub repository</a>.</div>",
+	"l_options":"Name as it appears in iOS devices",
+	"l_pin":"Apple HomeKit Pin",
+	"l_config": "Detected Configuration"
+}

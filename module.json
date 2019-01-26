@@ -1,0 +1,54 @@
+{
+    "singleton": true,
+    "category": "support_external_ui",
+    "author": "Ralph Wetzel",
+    "homepage": "https://github.com/ralphwetzel/bridge4kt",
+    "icon": "house.png",
+    "moduleName": "Bridge4KT",
+    "version": "1.0",
+    "maturity": "stable",
+    "repository": {
+            "type": "git",
+            "source": "https://github.com/ralphwetzel/bridge4kt"
+    },
+    "defaults": {
+        "title": "__m_title__",
+        "description": "__m_descr__",
+        "name": "__m_title__",
+        "pin": "",
+        "config": ""
+    },
+    "schema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "required": true
+            },
+            "pin": {
+                "type": "string",
+                "readonly": true
+            },
+            "config": {
+                "type": "string",
+                "readonly": true
+            }
+        },
+        "required": false
+    },
+    "options": {
+        "fields": {
+            "name": {
+                "label": "__l_options__"
+            },
+            "pin": {
+                "label": "__l_pin__"
+            },
+            "config": {
+                "type": "textarea",
+                "label": "__l_config__"
+            }
+        }
+    },
+    "postRender": "loadFunction:postRender.js"
+}

@@ -1,0 +1,584 @@
+@external
+class HomeKit:
+    pass
+
+@external
+class HKAccessory:
+    pass
+
+@external
+class HKService:
+    pass
+
+import characteristics
+import devices
+
+HomeKit.Services.BatteryService = "96"
+HomeKit.Services.ServiceLabel = "CC"
+HomeKit.Characteristics.ServiceLabelIndex = "CB"
+HomeKit.Characteristics.ServiceLabelNamespace = "CD"
+
+def out():
+    for key in arguments:
+        if _.isObject(arguments[key]):
+            arguments[key] = JSON.stringify(arguments[key])
+
+    debugPrint.apply(this, arguments)
+    return True
+
+
+class Base():
+
+    def __init__(self, bridge4kt, id):
+        # self.parent = parent
+        self.bridge = bridge4kt
+        self.id = id
+        # self.instance = instance or 0
+
+        self.service = None
+        self.serviceID = None
+        self.name = ""
+        self.definition = []
+        self.characteristics = {}
+
+    def add_to(self, accessory: HKAccessory) -> HKService:
+        pass
+
+    def generateUUID(self):
+        return 'xxxxxxxx-xxxx-xxxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, def(c):
+            r = Math.random()*16|0
+            v = r if c == 'x' else v'(r & 0x3|0x8)'
+            return v.toString(16)
+        )
+
+    def update(self):
+        for char in self.characteristics:
+            self.characteristics[char].update()
+
+    def remove(self):
+        console.log(". Removing HK Service '" + self.name + "'")
+        for char in self.characteristics:
+            self.characteristics[char].remove()
+
+        if self.service?:
+            self.service.remove()
+
+        self.characteristics = {}
+        self.service = None
+
+class Default(Base):
+
+    def add_to(self, accessory, primary):
+
+        def log_interface(object):
+            for prop in object:
+                console.log(prop)
+
+        s = accessory.addService(self.serviceID, self.name)
+        console.log(". HK Service '" + self.name  + "' added")
+
+        # log_interface(s)
+
+        # patching HKService.serialize instance for 'primary' & 'hidden' functionality
+
+        def override(object, methodName, callback):
+            object[methodName] = callback(object[methodName])
+
+        override(s, 'serialize', def(original):
+            return def(connection):
+                service = original.apply(this, arguments)
+                if not _.isBoolean(this.primary):
+                    service.primary = False
+                else:
+                    service.primary = this.primary
+
+                if not _.isBoolean(this.hidden):
+                    service.hidden = False
+                else:
+                    service.hidden = this.hidden
+
+                return service
+        )
+
+        s.primary = primary
+        self.service = s
+
+        for char in self.definition:
+            c = characteristics.create(self.bridge, self.id, char)
+            if c?:
+                self.characteristics[char] = c
+                c.add_to(self.service)
+
+        # console.log(self.service.serialize.toString())
+
+
+class Sensor(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        self.name = "Unspecified Binary Sensor"
+        self.definition = ['Name', 'StatusActive', 'StatusFault',
+                           'StatusTampered', 'StatusLowBattery']
+
+
+class AccessoryInformation(Base):
+    # Already part of the Accessory Creation process managed by Z-Way
+    pass
+
+
+class AirPurifier(Base):
+    # Will be added on demand!
+    pass
+
+
+class AirQualitySensor(Base):
+    # Will be added on demand!
+    pass
+
+
+class BatteryService(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.BatteryService
+        self.name = "Battery Service"
+        self.definition = ['BatteryLevel', 'ChargingState', 'StatusLowBattery']
+
+
+class BridgingState(Base):
+
+    def add_to(self, accessory: HKAccessory) -> HKService:
+
+        s = accessory.addService(HomeKit.Services.BridgingState, "BridgingState")
+        console.log(". HK Service 'BridgingState' added")
+
+        s.addCharacteristic(HomeKit.Characteristics.Reachable, "bool", True, ["pr", "ev"])
+        s.addCharacteristic(HomeKit.Characteristics.LinkQuality, "uint8", 1, ["pr", "ev"], {"maxValue":4, "minValue":1, "minStep":1})
+        s.addCharacteristic(HomeKit.Characteristics.AccessoryIdentifier, "string", self.generateUUID())
+        s.addCharacteristic(HomeKit.Characteristics.Category, "uint16", 1, ["pr", "ev"], {"maxValue":16, "minValue":1, "minStep":1})
+        return s
+
+
+class CameraRTPStreamManagement(Base):
+    # Will be added on demand!
+    pass
+
+
+class CarbonDioxideSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.CarbonDioxideSensor
+        self.name = "Carbon Dioxide Sensor"
+        self.definition.extend('CarbonDioxideDetected', 'CarbonDioxideLevel')
+
+
+class CarbonMonoxideSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.CarbonMonoxideSensor
+        self.name = "Carbon Monoxide Sensor"
+        self.definition.extend('CarbonMonoxideDetected', 'CarbonMonoxideLevel', 'CarbonMonoxidePeakLevel')
+
+
+class ContactSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.ContactSensor
+        self.name = "Contact Sensor"
+        self.definition.append('ContactSensorState')
+
+
+class Door(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        if not self.index?:
+            self.index = ""
+        self.serviceID = HomeKit.Services.Door
+        self.name = "Door"
+        self.definition = ['TargetPosition' + self.index, 'CurrentPosition' + self.index, 'PositionState', 'Name',
+                           'HoldPosition', 'ObstructionDetected']
+
+class DoorA(Door):
+    def __init__(self, bridge4kt, id):
+        self.index = 'A'
+        Door.__init__(self, bridge4kt, id)
+
+class DoorB(Door):
+    def __init__(self, bridge4kt, id):
+        self.index = 'B'
+        Door.__init__(self, bridge4kt, id)
+
+class DoorC(Door):
+    def __init__(self, bridge4kt, id):
+        self.index = 'C'
+        Door.__init__(self, bridge4kt, id)
+
+class DoorSimple(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.Door
+        self.name = "Door"
+        self.definition = ['TargetPositionSimple', 'CurrentPositionSimple', 'PositionState', 'Name']
+
+
+class Doorbell(Base):
+    # Will be added on demand!
+    pass
+
+class Fan(Base):
+    # Will be added on demand!
+    pass
+
+class FanV2(Base):
+    # Will be added on demand!
+    pass
+
+class FilterMaintenance(Base):
+    # Will be added on demand!
+    pass
+
+class GarageDoorOpener(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.GarageDoorOpener
+        self.name = "GarageDoorOpener"
+        self.definition = ['CurrentDoorState', 'TargetDoorState', 'ObstructionDetected', 'Name',
+                           'LockCurrentState', 'LockTargetState']
+
+class HumiditySensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.HumiditySensor
+        self.name = "Humidity Sensor"
+        self.definition.append('CurrentRelativeHumidity')
+
+
+class LeakSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.LeakSensor
+        self.name = "Leak Sensor"
+        self.definition.append('LeakDetected')
+
+
+class Lightbulb(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Lightbulb
+        self.name = "Lightbulb"
+        self.definition = ['On', 'Name',
+                           'Brightness2RGB', 'Hue', 'Saturation']
+
+
+# ColorTemperature is an alternative way to command Lightbulbs
+# TBC if supported by ZWay
+class LightbulbCT(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Lightbulb
+        self.name = "Lightbulb"
+        self.definition = ['On', 'Name',
+                           'Brightness', 'ColorTemperature']
+
+class LightSensor(Base):
+    pass
+
+class LockManagement(Base):
+    pass
+
+class LockMechanism(Base):
+    pass
+
+class Microphone(Base):
+    pass
+
+
+class MotionSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.MotionSensor
+        self.name = "Motion Sensor"
+        self.definition.append('MotionDetected')
+
+
+class OccupancySensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.OccupancySensor
+        self.name = "Occupancy Sensor"
+        self.definition.append('OccupancyDetected')
+
+
+class Outlet(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Outlet
+        self.name = "Outlet"
+        self.definition = ['On', 'OutletInUse', 'Name']
+
+
+class SecuritySystem(Base):
+    pass
+
+
+class ServiceLabel(Default):
+    def __init__(self, controller, id):
+        Default.__init__(self, controller, id)
+        self.serviceID = HomeKit.Services.ServiceLabel
+        self.name = "Service Label"
+        self.definition = ['ServiceLabelNamespace']
+
+
+class Slat(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Slat
+        self.name = "Slat"
+        self.definition = ['CurrentSlatState', 'SlatType', 'Name',
+                           'SwingMode', 'CurrentTiltAngle', 'TargetTiltAngle']
+
+
+class SmokeSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.SmokeSensor
+        self.name = "Smoke Sensor"
+        self.definition.append('SmokeDetected')
+
+class Speaker(Base):
+    pass
+
+
+class StatelessProgrammableSwitch(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.StatelessProgrammableSwitch
+        self.name = "Stateless Programmable Switch"
+        self.definition = ['ProgrammableSwitchEvent', 'Name',
+                           'ServiceLabelIndex']
+
+        # Those props will be set by the accessory
+        self.ServiceLabelIndex = None
+        self.responsible = None
+
+    def add_to(self, accessory, primary):
+        Default.add_to(self, accessory, primary)
+
+        for c in self.characteristics:
+            if c == "ProgrammableSwitchEvent":
+                self.characteristics[c].responsible = self.responsible
+            if c == "ServiceLabelIndex":
+                self.characteristics[c].ServiceLabelIndex = self.ServiceLabelIndex
+
+
+class Switch(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.Switch
+        self.name = "Switch"
+        self.definition = ['On', 'Name']
+
+
+class TemperatureSensor(Sensor):
+    def __init__(self, bridge4kt, id):
+        Sensor.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.TemperatureSensor
+        self.name = "Temperature Sensor"
+        self.definition.append('CurrentTemperature')
+
+
+class Thermostat(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Thermostat
+        self.name = "Thermostat"
+        self.definition = ['CurrentHeatingCoolingState', 'TargetHeatingCoolingState',
+                           # 'CurrentTemperatureThermostat' # customized to support the Danfoss
+                           'CurrentTemperature'
+                           ,'TargetTemperature', 'TemperatureDisplayUnits', 'CoolingThresholdTemperature',
+                           'CurrentRelativeHumidity', 'HeatingThresholdTemperature', 'Name', 'TargetRelativeHumidity']
+
+
+class Window(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        if not self.index?:
+            self.index = ""
+        self.serviceID = HomeKit.Services.Window
+        self.name = "Window"
+        self.definition = ['TargetPosition' + self.index, 'CurrentPosition' + self.index, 'PositionState', 'Name',
+                           'HoldPosition', 'ObstructionDetected']
+
+class WindowA(Window):
+    def __init__(self, bridge4kt, id):
+        self.index = "A"
+        Window.__init__(self, bridge4kt, id)
+
+class WindowB(Window):
+    def __init__(self, bridge4kt, id):
+        self.index = "B"
+        Window.__init__(self, bridge4kt, id)
+
+class WindowC(Window):
+    def __init__(self, bridge4kt, id):
+        self.index = "C"
+        Window.__init__(self, bridge4kt, id)
+
+class WindowSimple(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.Window
+        self.name = "Window"
+        self.definition = ['TargetPositionSimple', 'CurrentPositionSimple', 'PositionState', 'Name']
+
+
+class WindowCovering(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        if not self.index?:
+            self.index = ""
+        self.serviceID = HomeKit.Services.WindowCovering
+        self.name = "Window Covering"
+        self.definition = ['TargetPosition' + self.index, 'CurrentPosition' + self.index, 'PositionState', 'Name',
+                           'CurrentHorizontalTiltAngle', 'TargetHorizontalTiltAngle',
+                           'CurrentVerticalTiltAngle', 'TargetVerticalTiltAngle',
+                           'HoldPosition', 'ObstructionDetected']
+
+class WindowCoveringA(WindowCovering):
+    def __init__(self, bridge4kt, id):
+        self.index = "A"
+        WindowCovering.__init__(self, bridge4kt, id)
+
+class WindowCoveringB(WindowCovering):
+    def __init__(self, bridge4kt, id):
+        self.index = "B"
+        WindowCovering.__init__(self, bridge4kt, id)
+
+class WindowCoveringC(WindowCovering):
+    def __init__(self, bridge4kt, id):
+        self.index = "C"
+        WindowCovering.__init__(self, bridge4kt, id)
+
+class WindowCoveringSimple(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+
+        self.serviceID = HomeKit.Services.WindowCovering
+        self.name = "Window Covering"
+        self.definition = ['TargetPositionSimple', 'CurrentPositionSimple', 'PositionState', 'Name']
+
+
+def create(bridge4kt, realID, definition):
+
+    assert(bridge4kt?)
+    assert(realID?)
+    assert(definition?)
+
+    known_services = {
+        'BatteryService': BatteryService,
+        'CarbonDioxideSensor': CarbonDioxideSensor,
+        'CarbonMonoxideSensor': CarbonMonoxideSensor,
+        'ContactSensor': ContactSensor,
+
+        # Door
+        'DoorA': DoorA,
+        'DoorB': DoorB,
+        'DoorC': DoorC,
+        'DoorSimple': DoorSimple,
+
+        'GarageDoorOpener': GarageDoorOpener,
+        'HumiditySensor': HumiditySensor,
+        'LeakSensor': LeakSensor,
+        'Lightbulb': Lightbulb,
+        # 'LightbulbCT': LightbulbCT,   <-- for the time being not supported!
+        # 'LightSensor': LightSensor,
+        'MotionSensor': MotionSensor,
+        'OccupancySensor': OccupancySensor,
+        'Outlet': Outlet,
+        "ServiceLabel": ServiceLabel,
+        'Slat': Slat,
+        'SmokeSensor': SmokeSensor,
+        'StatelessProgrammableSwitch': StatelessProgrammableSwitch,
+        'Switch': Switch,
+        'TemperatureSensor': TemperatureSensor,
+        'Thermostat': Thermostat,
+
+        # Window
+        'WindowA': WindowA,
+        'WindowB': WindowB,
+        'WindowC': WindowC,
+        'WindowSimple': WindowSimple,
+
+        # WindowCovering
+        'WindowCoveringA': WindowCoveringA,
+        'WindowCoveringB': WindowCoveringB,
+        'WindowCoveringC': WindowCoveringC,
+        'WindowCoveringSimple': WindowCoveringSimple
+    }
+
+    if definition in ["WindowCovering", "Door", "Window"]:
+
+        # create pDev manager
+        pD = devices.pDevice(realID)
+        # analyze capabilities
+        type = pD.genericID.split(".")
+        if len(type) == 3:
+            if type[1] == '09':
+                definition += "Simple"
+            elif type[1] == '11':  # Window Covering ( == Switch MultiLevel )
+                # if self.vDev.deviceType == "switchBinary":
+                #     c = Basic()  # Fallback option!
+                if type[2] == '05':
+                    definition += "A"
+                elif type[2] == '06':
+                    definition += "B"
+                elif type[2] == '07':
+                    definition += "C"
+
+    if definition in known_services:
+        # 'new' is necessary here to explicitly advise RapydScript to create an object
+        s = new known_services[definition](bridge4kt, realID)
+        return s
+
+    return None
+
+def check_sensor_capabilities(bridge4kt, pDev: devices.pDevice):
+
+    if not (bridge4kt? and pDev?):
+        return None
+
+    sensor_definition = []
+
+    # We check the availability of the vDev's indicating a capability of a given sensor.
+    # We borrow the 'detectType' definition from the relevant characteristics...
+
+    sensors = {
+        "SmokeDetected": "SmokeSensor",
+        "CarbonMonoxideDetected": "CarbonMonoxideSensor",
+        "CarbonDioxideDetected": "CarbonDioxideSensor",
+        "LeakDetected": "LeakSensor",
+        "ContactSensorState": "ContactSensor",
+        "MotionDetected": "MotionSensor",
+        "CurrentTemperature": "TemperatureSensor",
+    }
+
+    for sensor in sensors:
+        s = characteristics.create(bridge4kt, pDev.id, sensor)
+        if s?:
+            d = devices.detect_vDev(bridge4kt.controller, pDev.id, s.detectType)
+            if d?:
+                sensor_definition.append(sensors[sensor])
+
+    if len(sensor_definition) > 0:
+        return sensor_definition
+
+    return None
+
+

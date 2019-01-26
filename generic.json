@@ -2,13 +2,14 @@
 // as basicClass.genericClass.specificClass
 // to HomeKit Accessory Cathegory
 {
-  "01.01.06": "StatelessProgrammableSwitch",  // SPECIFIC_TYPE_PORTABLE_REMOTE_CONTROLLER
-  "04.07.01": "Sensor",  // GENERIC_TYPE_SENSOR_NOTIFICATION
-  "04.08.04": "Thermostat",   // SPECIFIC_TYPE_SETPOINT_THERMOSTAT
-  "04.09.00": "WindowCoveringSimple",  // GENERIC_TYPE_WINDOW_COVERING (deprecated)
-  "04.09.01": "WindowCoveringSimple",  // SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING (deprecated)
-  "04.11.05": "WindowCovering",  // SPECIFIC_TYPE_CLASS_A_MOTOR_CONTROL
-  "04.11.06": "WindowCovering",  // SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
-  "04.11.07": "WindowCovering",  // SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
-  "04.20.01": "Sensor" // GENERIC_TYPE_SENSOR_BINARY
+   "01.01.06": "StatelessProgrammableSwitch" // SPECIFIC_TYPE_PORTABLE_REMOTE_CONTROLLER
+  ,"04.07.01": "Sensor"  // GENERIC_TYPE_SENSOR_NOTIFICATION
+  ,"04.08.04": "Thermostat"   // SPECIFIC_TYPE_SETPOINT_THERMOSTAT
+  ,"04.09.00": "WindowCoveringSimple"  // GENERIC_TYPE_WINDOW_COVERING (deprecated)
+  ,"04.09.01": "WindowCoveringSimple"  // SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING (deprecated)
+  ,"04.11.02": "Lightbulb"  // SPECIFIC_TYPE_COLOR_TUNABLE_MULTILEVEL   <-- Educated guess! Raise hand if not working!
+  ,"04.11.05": "WindowCovering"  // SPECIFIC_TYPE_CLASS_A_MOTOR_CONTROL
+  ,"04.11.06": "WindowCovering"  // SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
+  ,"04.11.07": "WindowCovering"  // SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
+  ,"04.20.01": "Sensor" // GENERIC_TYPE_SENSOR_BINARY
 }

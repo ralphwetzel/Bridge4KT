@@ -1,0 +1,7 @@
+// This list links a fingerprint
+// generated from the virtual devices detected by z-wave.me
+// to HomeKit Accessory Cathegory
+{
+  "da989819": "WindowCovering",  // Fibaro Roller Shutter 2
+  "9e3a9037":  ["SmokeSensor", "TemperatureSensor"] // Fibaro Smoke Sensor FGSD-002
+}

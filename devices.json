@@ -1,0 +1,13 @@
+// This list links Z-Wave manufacturer device data
+// as manufacturerId.productType.productId
+// to HomeKit services.
+// First entry will be used as a accessory if matching HomeKit accessory categories
+{
+   "0002.0005.0004": ["Thermostat", "BatteryService"]    // Danfoss LC-11
+  ,"0109.2002.0203": ["MotionSensor", "TemperatureSensor"] // Vision Motion Sensor
+  ,"010f.0302.1000": "WindowCovering"   // Fibaro Roller Shutter 2
+  ,"010f.0c02.1002": ["SmokeSensor", "TemperatureSensor"]   // Fibaro Smoke Sensor FGSD-002
+  ,"0115.0100.0103": ["StatelessProgrammableSwitch", "BatteryService"]    // POPP KFOB
+  ,"013c.0001.0015": "WindowCovering"   // Philio Relay Insert Blind
+  ,"0159.0003.0052": "WindowCovering"   // Qubino Roller Shutter
+}

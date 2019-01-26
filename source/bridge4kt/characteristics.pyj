@@ -1,0 +1,2506 @@
+import homekit
+import devices
+
+HomeKit.Services.ServiceLabel = "CC"
+HomeKit.Characteristics.ServiceLabelIndex = "CB"
+HomeKit.Characteristics.ServiceLabelNamespace = "CD"
+
+def out():
+    for key in arguments:
+        if _.isObject(arguments[key]):
+            arguments[key] = JSON.stringify(arguments[key])
+
+    debugPrint.apply(this, arguments)
+    return True
+
+
+class Base():
+
+    # for debugging purposes
+    def log_interface(object):
+        for prop in object:
+            console.log(prop)
+
+    def __init__(self, bridge4kt, id):
+
+        # self.parent = parent
+        self.bridge = bridge4kt
+        self.id = id
+        # self.instance = instance or 0
+        self.name = ''
+
+        self.zway = v'global["zway"]'
+
+        self.vDev = None
+        # self.type = None
+
+        self.value = None
+
+        self.service = None
+        self.characteristic = None
+        self.detectType = None
+
+        self.alarm = {}
+        self.alarm.smoke = 0x01
+        self.alarm.co = 0x02
+        self.alarm.co2 = 0x03
+        self.alarm.heat = 0x04
+        self.alarm.water = 0x05
+        self.alarm.access = 0x06
+        self.alarm.burglar = 0x07
+        self.alarm.power = 0x08
+        self.alarm.system = 0x09
+        self.alarm.emergency = 0x0a
+        self.alarm.clock = 0x0b
+
+        self.thermostat = {}
+        self.thermostat.off = 0x00
+        self.thermostat.heat = 0x01
+        self.thermostat.cool = 0x02
+        self.thermostat.auto = 0x03
+        self.thermostat.standby = 0x04
+        self.thermostat.resume = 0x05
+        self.thermostat.fan = 0x06
+        self.thermostat.furnace = 0x07
+        self.thermostat.dryAir = 0x08
+        self.thermostat.moistAir = 0x09
+        self.thermostat.autoChange = 0x0a
+        self.thermostat.energySaveHeat = 0x0b
+        self.thermostat.energySaveCool = 0x0c
+        self.thermostat.awayHeat = 0x0d
+        self.thermostat.awayCool = 0x0e
+        self.thermostat.boost = 0x0f
+        self.thermostat.specific = 0x1f
+
+        self.thermostat.heating = ( 2 ** self.thermostat.heat +
+                                    2 ** self.thermostat.energySaveHeat +
+                                    2 ** self.thermostat.awayHeat +
+                                    2 ** self.thermostat.boost )
+
+        self.thermostat.cooling = ( 2 ** self.thermostat.cool +
+                                    2 ** self.thermostat.energySaveCool +
+                                    2 ** self.thermostat.awayCool )
+
+        self.thermostat.automatic = ( 2 ** self.thermostat.auto +
+                                      2 ** self.thermostat.standby +
+                                      2 ** self.thermostat.autoChange )
+
+
+        # send notification to HK
+        # don't forget to remove()
+        self.onLevelChange = def():
+            c = self.characteristic
+            if c is not None:
+                aid = c.service.accessory.aid
+                console.log(self.name + ": change:metrics:level @ " +
+                            aid + "." + self.characteristic.iid)
+                self.bridge.hk.update(aid, c.iid)
+
+
+    # def set_deviceType(self, deviceType):
+    #
+    #     if v'_.isArray(deviceType)' is False:
+    #         deviceType = [deviceType]
+    #
+    #     self.deviceType = deviceType
+
+    def get_real_dev(self, vDev):
+
+        # We're not interested in the vDev - yet in the Dev!
+        # This returns an Array: [match, group#1] or None
+        check = v'/(?:ZWayVDev_zway_)(\d+)(?:-.+)/'.exec(vDev.id)
+        if not check? or len(check) < 2:
+            return None
+
+        # console.log(check[1].toString())
+        return check[1]
+
+    def perform_vDev_detection(self, detectType):
+
+        # console.log("Detecting vDev...")
+
+        if not detectType?:
+            return None
+
+        vDev = None
+        # type = None
+
+        for testType in detectType:
+
+            # out(testType)
+
+            definition = detectType[testType]
+
+            if _.isArray(definition) is False:
+                definition = [definition]
+
+            controller = self.bridge.controller
+
+            for d in definition:
+
+                # Would it be better to operate with CommandClasses?
+                vDevList = controller.devices.filter(def(x):
+                    # console.log(x.get(testType) + " / " + d)
+                    check = x.get(testType)
+                    # out(check)
+                    if _.isArray(check):
+                        return True if d in check else False
+
+                    return check == d
+                )
+
+                # out(vDevList)
+
+                vDevList = vDevList.filter(def(x):
+                    realID = self.get_real_dev(x)
+                    return realID == self.id if realID? else False
+                )
+
+                # out(vDevList)
+
+                if len(vDevList) > 0:
+                    vDev = vDevList[0]
+                    # type = t
+                    break
+
+            if vDev is not None:
+                break
+
+        # console.logJS(vDev)
+
+        if vDev is not None:
+            # return { "vDev": vDev, "type": type }
+            return vDev
+
+        return None
+
+    def add_to(self, service: homekit.HKService) -> homekit.HKCharacteristic:
+
+        if self.characteristic?:
+            return self.characteristic
+
+        self.service = service
+
+        if self.add_to_callback?:
+            self.characteristic = self.add_to_callback()
+
+        if self.characteristic?:
+            # self.enable_onLevelChange()
+            console.log(".. HK Characteristic '" + self.name + "' added.")
+            return self.characteristic
+        elif not self.vDev?:
+            console.log(".. HK Characteristic '" + self.name + "': vDev not identified.")
+            return None
+        else:
+            console.log(".. Failed to add HK Characteristic '" + self.name + "'.")
+            return None
+
+    def update(self):
+
+        vDev = None
+        # type = None
+
+        vDev = self.perform_vDev_detection(self.detectType)
+
+        # console.logJS("update found: " + vDev)
+
+        if vDev?:
+            if self.vDev? and vDev.id != self.vDev.id:
+                if self.service? and self.characteristic?:
+                    console.log(".. HK: Removing @'" + self.name + "' vDev '" + self.vDev.id + "' for '" + vDev.id + "'.")
+
+                    # console.log(self.characteristic.remove.toString())
+
+                    self.remove()
+
+                    # self.characteristic.remove()
+                    # self.characteristic = None
+                    # self.vDev = None
+
+            if not self.vDev?:
+                self.add_to(self.service)
+
+        else:
+            if self.vDev? and self.vDev != -1 and self.characteristic?:
+                console.log(".. HK: Removing @'" + self.name + "' vDev '" + self.vDev.id + "'.")
+
+                self.remove()
+
+                # self.characteristic.remove()
+                # self.characteristic = None
+                # self.vDev = None
+
+    def remove(self):
+
+        if self.characteristic?:
+            self.characteristic.remove()
+            self.characteristic = None
+
+        self.vDev = None
+
+        console.log(".. HK Characterisitc '" + self.name + "' removed.")
+
+
+    def check_alarm_supported(self, alarm, mask):
+
+        if _.isArray(mask) is False:
+            mask = [mask]
+
+        i = 0
+        t = 0
+        for b in mask:
+            t += v'b << i*8'
+            i += 1
+
+        return v't & alarm' > 0
+
+    def override(self, object, methodName, callback):
+
+        m = object[methodName]
+        object[methodName] = callback(object[methodName])
+        return m
+
+    def override_reset(self, object, methodName, original):
+        m = object[methodName]
+        object[methodName] = original
+        return m
+
+    def map_hk_to_zway(self, position):
+        # position / hk: 0 ... 100% -> 101 steps
+        # value / zway: 0 ... 99 -> 100 steps
+        # => position / 101 * 100 = value
+        return Math.round(position / 1.01)
+
+    def map_zway_to_hk(selfself, value):
+
+        # 0xFE is a special value, returned by devices who are not position aware
+        if value == 0xFE:
+            return 50   # somewhere in between
+
+        # zway value may be > 99 (e.g. 0xFF as special value for 'fully open')
+        # hk doesn't like positions > 100
+        if value > 99: value = 99
+
+        # position / hk: 0 ... 100% -> 101 steps
+        # value / zway: 0 ... 99 -> 100 steps
+        # => value / 100 * 101 = position
+        return Math.round(value * 1.01)
+
+
+# ---
+
+class BinarySensorState(Base):
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                self.type
+                , "uint8"
+                , {
+                    'get': def():
+                        value = 0
+                        level = self.vDev.get("metrics:level")
+                        if level?:
+                            level = level.toString()
+                            value = self.level_to_status(level)
+                        # console.log(self.name + ": " + value)
+                        return value
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def level_to_status(self, level):
+        return 1 if level.toLowerCase() == "on" else 0
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+        Base.remove(self)
+
+
+class MultilevelSensorState(Base):
+
+    def __init__(self, bridge4kt, id):
+        Base.__init__(self, bridge4kt, id)
+        self.format = "float"
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'get': def():
+                        v = self.vDev.get("metrics:level")
+                        if not v?:
+                            v = 0.0
+                        return self.convert(v)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def convert(self, level):
+        # level = Math.round(level)
+        return level
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+        Base.remove(self)
+
+
+class SlatSupport(Base):
+
+    def __init__(self, bridge4kt, id):
+
+        self.rangeMax = None
+        self.rangeMin = None
+
+        Base.__init__(self, bridge4kt, id)
+
+    # ZWay: 0 ... 99
+    # HK: -90° ... +90° == 180
+
+    # tag "B4KT:Slat:Minus90" limits HK values to -90° ... 0°
+    # tag "B4KT:Slat:Plus90" limits HK values to 0° ... 90°
+    # No tag => 180°
+
+    def map_zway_to_hk(self, value):
+
+        if self.vDev is None:
+            return Math.round((180 / 99) * value - 90)
+
+        if (self.rangeMax is None) or (self.rangeMin is None):
+            t = self.vDev.get("tags")
+            if t?:
+                if "B4KT:Slat:Minus90" in t:
+                    self.rangeMin = -90
+                    self.rangeMax = 0
+                elif "B4KT:Slat:Plus90" in t:
+                    self.rangeMin = 0
+                    self.rangeMax = 90
+                else:
+                    self.rangeMin = -90
+                    self.rangeMax = 90
+
+        range = self.rangeMax - self.rangeMin
+
+        return Math.round((range / 99) * value + self.rangeMin)
+
+
+    def map_hk_to_zway(self, position):
+
+        if self.vDev is None:
+            return Math.round((position + 90) * (99 / 180))
+
+        if (self.rangeMax is None) or (self.rangeMin is None):
+            t = self.vDev.get("tags")
+            if t?:
+                if "B4KT:Slat:Minus90" in t:
+                    self.rangeMin = -90
+                    self.rangeMax = 0
+                elif "B4KT:Slat:Plus90" in t:
+                    self.rangeMin = 0
+                    self.rangeMax = 90
+                else:
+                    self.rangeMin = -90
+                    self.rangeMax = 90
+
+        position = Math.min(self.rangeMax, position)
+        position = Math.max(self.rangeMin, position)
+
+        range = self.rangeMax - self.rangeMin
+
+        return Math.round((position - self.rangeMin) * (99 / range))
+
+
+
+class RGB(Base):
+
+    @property
+    def rgb(self):
+        r = self.vDev.get("metrics:color:r")
+        g = self.vDev.get("metrics:color:g")
+        b = self.vDev.get("metrics:color:b")
+        return {"r": r, "g": g, "b": b}
+
+    # copied from 'HomeKit Bridge'
+    def hsv2rgb(self, hsv):
+
+        sfrac = hsv.s / 100
+        vfrac = hsv.v / 100
+
+        if sfrac == 0:
+            vb = Math.round(vfrac * 255)
+            return { "r": vb, "g": vb, "b": vb}
+
+        hdb60 = (hsv.h % 360) / 60
+        sector = Math.floor(hdb60)
+        fpart = hdb60 - sector
+        c = vfrac * ( 1 - sfrac )
+        x1 = vfrac * ( 1 - sfrac * fpart )
+        x2 = vfrac * ( 1 - sfrac * (1 - fpart) )
+
+        if sector == 0:
+            r = vfrac
+            g = x2
+            b = c
+        elif sector == 1:
+            r = x1
+            g = vfrac
+            b = c
+        elif sector == 2:
+            r = c
+            g = vfrac
+            b = x2
+        elif sector == 3:
+            r = c
+            g = x1
+            b = vfrac
+        elif sector == 4:
+            r = x2
+            g = c
+            b = vfrac
+        else:
+            r = vfrac
+            g = c
+            b = x1
+
+        return { "r": Math.round(255 * r),
+                 "g": Math.round(255 * g),
+                 "b": Math.round(255 * b) }
+
+
+    def rgb2hsv(self, rgb):
+
+        r = rgb.r / 255
+        g = rgb.g / 255
+        b = rgb.b / 255
+
+        min = Math.min(r, Math.min(g, b))
+        max = Math.max(r, Math.max(g, b))
+
+        if (min == max):
+            # shade of gray
+            return { "h": 0, "s": 0, "v": r * 100 }
+
+        d = None
+        if r == min:
+            d = g - b
+        elif b == min:
+            d = r - g
+        else:
+            d = b - r
+
+        if r == min:
+            h = 3
+        elif b == min:
+            h = 1
+        else:
+            h = 5
+
+        h = 60 * (h - d / (max - min))
+        s = (max - min) / max
+        v = max
+
+        return {"h": h, "s": s * 100, "v": v * 100}
+
+
+# ---
+
+class BatteryLevel(Base):
+
+    def add_to_callback(self):
+
+        self.name = "BatteryLevel"
+        self.vDev = -1   # skip marker
+        c = None
+
+        dev = devices.pDevice(self.id)
+        if dev?:
+            cc = dev.commandClass(0x80)  # Battery
+            if cc:
+                self.commandClass = cc
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.BatteryLevel
+                    , "uint8"
+                    , {
+                        'get':
+
+                            def():
+                                value = self.commandClass.data.last.value or 0
+                                if value > 100:
+                                    value = 100
+
+                                return value
+                    }
+                )
+
+                self.commandClass.data.last.bind(self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if self.commandClass:
+            self.commandClass.data.last.bind(None)
+
+        Base.remove(self)
+
+
+class Brightness2RGB(RGB):
+
+    def add_to_callback(self):
+
+        self.name = "Brightness"
+
+        c = None
+        self.detectType = { "deviceType": "switchRGB" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.Brightness
+                , "int"
+                , {
+                    'get': def():
+                        return self.rgb2hsv(self.rgb).v
+
+                    , 'set': def(value):
+                        hsv = self.rgb2hsv(self.rgb)
+                        hsv.v = value
+                        rgb = self.hsv2rgb(hsv)
+                        self.vDev.performCommand("exact", {"red": rgb.r, "green": rgb.g, "blue": rgb.b})
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+        Base.remove(self)
+
+
+class CarbonDioxideDetected(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Carbon Dioxide Detected"
+        self.type = HomeKit.Characteristics.CarbonDioxideDetected
+        self.detectType = {"probeType": ["alarm_coo", "alarmSensor_coo"]}
+
+
+class CarbonMonoxideDetected(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Carbon Monoxide Detected"
+        self.type = HomeKit.Characteristics.CarbonMonoxideDetected
+        self.detectType = {"probeType": ["co", "alarm_co", "alarmSensor_co"]}
+
+
+class ChargingState(Base):
+
+    # Any device out there that is chargeable?
+
+    def add_to_callback(self):
+
+        self.name = "Charging State"
+        self.vDev = -1   # skip marker
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.ChargingState
+            , "uint8"
+            , {
+                'get':
+                    def():
+                        return 2    # Not Chargeable
+            }
+        )
+
+        return c
+
+
+class ContactSensorState(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Contact Sensor State"
+        self.type = HomeKit.Characteristics.ContactSensorState
+        self.detectType = {"probeType": ["door-window", "alarm_door", "alarmSensor_door"] }
+
+    def level_to_status(self, level):
+        return 0 if level.toLowerCase() == 'on' else 1
+
+
+class CurrentHeatingCoolingState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "CurrentHeatingCoolingState"
+
+        c = None
+        self.vDev = -1
+        dev = devices.pDevice(self.id)
+
+        self.commandClass = dev.commandClass(0x40) # ThermostatMode
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        mode = self.commandClass.data.mode.value
+
+                        if (2 ** mode) & self.thermostat.heating:
+                            return 1    # Heating
+                        elif (2 ** mode) & self.thermostat.cooling:
+                            return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+            return c
+
+        self.commandClass = dev.commandClass(0x42) # Thermostat Operating State
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        state = self.commandClass.data.state.value
+
+                        if (2 ** state) & self.thermostat.heating:
+                            return 1    # Heating
+                        elif (2 ** state) & self.thermostat.cooling:
+                            return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+            return c
+
+        self.commandClass = dev.commandClass(0x43) # Thermostat SetPoint
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        modemask = self.commandClass.data.modemask.value
+
+                        i = 0
+                        if modemask > 0:
+                            while v'modemask & 1 == 0':
+                                modemask = v'modemask >>> 1'
+                                i += 1
+                                if modemask == 0:
+                                    break
+
+                        if i > 0:
+                            if (2 ** i) & self.thermostat.heating:
+                                return 1    # Heating
+                            elif (2 ** i) & self.thermostat.cooling:
+                                return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+        return c
+
+
+class CurrentPositionB(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position B"
+
+        c = None
+        self.vDev = None
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+
+            if _.isObject(self.vDev):
+
+                # A Class B device, if not calibrated, knows exactly 3 states:
+                # 0x00 & 0x63/0xFF for the end points, 0xFE for 'in between'
+                # If calibrated, accurate position values will be returned
+
+                current = self.vDev.get("metrics:level")
+            else:
+                current = 50    # in between
+
+            if status == 0 or status == 1:
+                self.position = current
+            elif status == 2:   # stopped at determinable position
+                if _.isObject(self.vDev):
+                    self.position = current
+                else:
+                    if self.latest_status == 0:
+                        self.position = 0x00
+                    elif self.latest_status == 1:
+                        self.position = 0xFF
+            elif status == 3:   # stopped somewhere in between
+                self.position = current  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.onPosition = def():
+            self.position = self.vDev.get("metrics:level")
+            # out("CP: " + self.position)
+            if self.position == 0xFE:
+                self.position = 50  # in between
+            self.onLevelChange()
+
+        self.detectType = { "probeType": "motor" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d is not None:
+            self.vDev = d
+            self.position = self.vDev.get("metrics:level")
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.position)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        # self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+        return c
+
+    def remove(self):
+        # self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class CurrentPositionC(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position C"
+
+        c = None
+        self.vDev = None
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+            if _.isObject(self.vDev):
+                self.position = self.vDev.get("metrics:level")
+            else:   # Fallback
+                if status == 0 or status == 1:
+                    self.position = 50  # in between
+                elif status == 2:   # stopped at determinable position
+                    if self.latest_status == 0:
+                        self.position = 0x00
+                    elif self.latest_status == 1:
+                        self.position = 0xFF
+                elif status == 3:   # stopped somewhere in between
+                    self.position = 50  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.onPosition = def():
+            self.position = self.vDev.get("metrics:level")
+            self.onLevelChange()
+
+        self.detectType = { "probeType": "motor" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.position)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class CurrentPositionSimple(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position Simple"
+
+        c = None
+        self.vDev = -1
+
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+            if status == 0 or status == 1:
+                self.position = 50  # in between
+            elif status == 2:   # stopped at determinable position
+                if self.latest_status == 0:
+                    self.position = 0x00
+                elif self.latest_status == 1:
+                    self.position = 0xFF
+            elif status == 3:   # stopped somewhere in between
+                self.position = 50  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.CurrentPosition
+            , "uint8"
+            , {
+                'get': def():
+                    return self.map_zway_to_hk(self.position)
+            }
+        )
+
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        Base.remove(self)
+
+
+# class CurrentPower(Base):
+#
+#     def add_to(self, service: HKService):
+#
+#         if self.characteristic:
+#             return self.characteristic
+#
+#         self.service = service
+#         self.name = "Current Power"
+#         _this = self
+#
+#         self.detectType = { "probeType": "meterElectric_watt" }
+#         d = self.perform_vDev_detection(self.detectType)
+#
+#         # console.log(d)
+#
+#         if not d?:
+#             return None
+#
+#         # console.log("-> vdev")
+#
+#         self.vDev = d
+#         # self.type = d.type
+#
+#         # console.log(service.addCharacteristic.toString())
+#
+#         c = service.addCharacteristic(
+#             # This is just a dummy value
+#             HomeKit.Characteristics.Name
+#             , "int"
+#             , {
+#                 'get': def():
+#
+#                     value = 0
+#                     if not _this.vDev?:
+#                         return 0
+#
+#                     retval = _this.vDev.get("metrics:level")
+#
+#                     retval = 0 if retval < 0 else retval
+#                     # retval = 100 if retval > 100 else retval
+#
+#                     return retval
+#
+#                 # , 'set': def(value):
+#                 #     if _this.type == 'sensorBinary':
+#                 #         v = 'on' if value > 0 else 'off'
+#                 #         _this.vDev.performCommand(v)
+#                 #     elif _this.type = 'sensorMultilevel':
+#                 #         _this.vDev.performCommand('exact', {"level": value})
+#             }
+#             , v'undefined'
+#             , {
+#                 "unit": "Watt"
+#                 , "maxValue": 1000
+#                 , "minValue": 0
+#                 , "minStep": 1
+#             }
+#         )
+#
+#         # Consider this as a very ugly hack ... yet it's necessary to slip a custom type
+#         # through the creation process of HKCharacteristics.
+#         c.type = "79b601dc-708c-4ab7-a9fe-3262171ecaae"
+#         c.description = "Current Power Consumption"
+#
+#         # log_interface(c)
+#
+#         console.log(".. HK Characteristic 'Current Power Consumption' added")
+#         self.characteristic = c
+#         return self.characteristic
+
+
+class CurrentRelativeHumidity(MultilevelSensorState):
+    def __init__(self, bridge4kt, id):
+        MultilevelSensorState.__init__(self, bridge4kt, id)
+        self.name = "Current Relative Humidity"
+        self.type = HomeKit.Characteristics.CurrentRelativeHumidity
+        self.detectType = { "probeType": "humidity" }
+
+
+class CurrentSlatState(Base):
+
+    # This is quite a generic implementation
+    # Anyone out there with a use case?
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Current Slat State"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentSlatState
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Swing"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 2 if check in t else 0
+                            else:
+                                return 2 if t == check else 0
+
+                        return 0    # Default == Fixed
+                }
+            )
+
+        return c
+
+
+class CurrentTemperature(MultilevelSensorState):
+    def __init__(self, bridge4kt, id):
+        MultilevelSensorState.__init__(self, bridge4kt, id)
+        self.name = "Current Temperature"
+        self.type = HomeKit.Characteristics.CurrentTemperature
+        self.detectType = { "probeType": ["temperature" , "thermostat_set_point"] }
+
+
+# class CurrentTemperatureThermostat(CurrentTemperature):
+#
+#     def add_to_callback(self):
+#
+#         c = CurrentTemperature.add_to_callback(self)
+#
+#         if c is None:
+#
+#             # The Danfoss thermostat doesn't have a dedicated temperature probe
+#             # Using the Target Temp instead
+#             # ToDo: Couldn't another sensor act as temperature probe?
+#
+#
+#             self.commandClass = devices.pDevice(self.id).supportedCommandClass(0x43)  # ThermostatSetPoint
+#
+#             if self.commandClass?:
+#
+#                 self.vDev = -1
+#
+#                 c = self.service.addCharacteristic(
+#                     HomeKit.Characteristics.CurrentTemperature
+#                     , "float"
+#                     , {
+#                         'get': def():
+#
+#                             modemask = self.commandClass.data.modemask.value
+#
+#                             if (2 ** self.thermostat.heat) & modemask:
+#                                 v = parseFloat(self.commandClass.data[self.thermostat.heat].val.value)
+#                             elif (2 ** self.thermostat.cool) & modemask:
+#                                 v = parseFloat(self.commandClass.data[self.thermostat.cool].val.value)
+#                             elif (2 ** self.thermostat.auto) & modemask:
+#                                 v = parseFloat(self.commandClass.data[self.thermostat.auto].val.value)
+#
+#                             return v if v? else 0.0
+# 
+#                     }
+#                 )
+#
+#         return c
+
+class CurrentTiltAngle(SlatSupport):
+
+    def __init__(self, bridge4kt, id):
+
+        # self.name = "Target Horizontal Tilt Angle"
+        # self.detectType = {"tags": "B4KT:Slat:Horizontal" }
+
+        SlatSupport.__init__(self, bridge4kt, id)
+        self.name = "Current Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentTiltAngle
+        self.detectType = {"deviceType": "switchMultilevel"}
+
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            pT = d.get("deviceType")        # this is to doublecheck in case we detect the device just by its tag
+            if pT == "switchMultilevel":
+                self.vDev = d
+                c = self.service.addCharacteristic(
+                    self.type
+                    , "int"
+                    , {
+                        'get': def():
+                            return self.map_zway_to_hk(self.vDev.get("metrics:level"))
+                    }
+                )
+
+                self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+
+class CurrentHorizontalTiltAngle(CurrentTiltAngle):
+    def __init__(self, bridge4kt, id):
+        CurrentTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Current Horizontal Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentHorizontalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Horizontal"}
+
+
+class CurrentVerticalTiltAngle(CurrentTiltAngle):
+    def __init__(self, bridge4kt, id):
+        CurrentTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Current Vertical Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentVerticalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Vertical"}
+
+
+class HoldPosition(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Hold Position"
+
+        c = None
+        self.vDev = -1
+
+        self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x26]  # SwitchMultilevel
+        if self.commandClass.StopLevelChange?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.HoldPosition
+                , "bool"
+                , {
+                    'set': def(value):
+                        value = 1 if value == True else 0
+                        if value == 1:
+                            out("HoldPosition")
+                            self.commandClass.StopLevelChange()
+                }
+            )
+
+        return c
+
+
+class Hue(RGB):
+
+    def add_to_callback(self):
+
+        self.name = "Hue"
+
+        c = None
+        self.detectType = {"deviceType": "switchRGB"}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.Hue
+                , "float"
+                , {
+                    'get': def():
+                        return self.rgb2hsv(self.rgb).h
+
+                    , 'set': def(value):
+                        hsv = self.rgb2hsv(self.rgb)
+                        hsv.h = value
+                        rgb = self.hsv2rgb(hsv)
+                        self.vDev.performCommand("exact", {"red": rgb.r, "green": rgb.g, "blue": rgb.b})
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+        Base.remove(self)
+
+
+class LeakDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Leak Detected"
+        self.type = HomeKit.Characteristics.LeakDetected
+        self.detectType = { "probeType": ["flood", "alarm_flood", "alarmSensor_flood"] }
+
+
+class MotionDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Motion Detected"
+        self.type = HomeKit.Characteristics.MotionDetected
+        self.detectType = {"probeType": ["motion", "alarm_burglar", "alarmSensor_burglar", "general_purpose"]}
+
+
+class Name(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Name"
+
+        c = None
+        self.vDev = -1
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.Name
+            , "string"
+            , {
+                'get': def():
+                    name = None
+                    dev = self.zway.devices[self.id]
+                    if dev?:
+                        name = dev.data.givenName.value.toString()
+                    return name if name? else "Unnamed device"
+            }
+        )
+
+        return c
+
+class OccupancyDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Occupancy Detected"
+        self.type = HomeKit.Characteristics.OccupancyDetected
+        self.detectType = {"probeType": "motion"}
+
+
+class On(Base):
+
+    def add_to_callback(self):
+
+        self.name = "On"
+
+        c = None
+        self.detectType = { "deviceType": "switchBinary" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.On
+                , "bool"
+                , {
+                    'get': def():
+                        return self.vDev.get("metrics:level") == 'on'
+
+                    , 'set': def(value):
+                        self.vDev.performCommand('on' if value is True else 'off')
+                }
+            )
+
+        return c
+
+
+class OutletInUse(Base):
+
+    def add_to_callback(self):
+
+        self.name = "OutletInUse"
+
+        c = None
+        self.vDev = -1
+
+        # ToDo:
+        # This characteristic should tell if there's 'somethin' plugged into the outlet
+        # As there're no way to 'detect' this via z-way, this therefore is just a Dummy implementation
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.OutletInUse
+            , "bool"
+            , {
+                'get': def():
+                    return True
+            }
+        )
+
+        return c
+
+
+# class PercentageSensorState(Base):
+#
+#     def add_to_callback(self):
+#
+#         c = None
+#         d = self.perform_vDev_detection(self.detectType)
+#
+#         if d?:
+#
+#             self.vDev = d
+#
+#             c = self.service.addCharacteristic(
+#                 self.type
+#                 , "uint8"
+#                 , {
+#                     'get':
+#
+#                         def():
+#                             value = 0
+#                             level = self.vDev.get("metrics:level")
+#                             if level?:
+#                                 level = level.toString()
+#                                 value = self.level_to_status(level)
+#                             # console.log(self.name + ": " + value)
+#                             return value
+#
+#                 }
+#             )
+#
+#             return c
+#
+#         def level_to_status(self, level):
+#             return 1 if level.toLowerCase() == "on" else 0
+
+
+class PositionState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Position State"
+
+        c = None
+        self.vDev = -1
+        self.status = 2 # Stopped
+
+        self.onStatus = def(status):
+            if status > 2:
+                status = 2
+            self.status = status
+            self.onLevelChange()
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.PositionState
+            , "uint8"
+            , {
+                'get': def():
+                    return self.status
+            }
+        )
+
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        Base.remove(self)
+
+
+class ProgrammableSwitchEvent(Base):
+
+    # self.responsible will be set by the service
+
+    def add_to_callback(self):
+
+        self.status = None
+
+        self.onTrigger = def(vDev):
+            level = vDev.get("metrics:level")
+            states = vDev.get("metrics:discreteStates")
+            if level? and states?:
+                check = level.slice(0,-1)
+                if check == self.responsible:
+                    status = states[level]
+
+                    # "11": {
+                    #     "cnt": "1",
+                    #     "action": "release",      # press, release, hold
+                    #     "type": "B"
+                    # },
+
+                    if status.action == "press":
+                        cnt = parseInt(status.cnt)
+                        if cnt == 1:
+                            self.status = 0     # Single
+                        elif cnt == 2:
+                            self.status = 1     # Double
+                        else:
+                            self.status = None  # Not supported!!
+
+                    elif status.action == "hold":
+                        self.status = 2     # Long
+
+                    else:
+                        self.status = None
+
+                    if self.status is not None:
+                        self.onLevelChange()
+
+                    # out(self.name + '.' + self.responsible + ':', self.status)
+                    return
+
+            self.status = None
+            # out(self.name + '.' + self.responsible + ':', self.status)
+
+
+        self.name = "Programmable Switch Event"
+
+        c = None
+        self.detectType = {"deviceType": "sensorDiscrete"}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.ProgrammableSwitchEvent
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.status
+                }
+            )
+
+            if c?:
+                # this suppresses the forwarding of the pr (get) value to a client
+                # Handling @ __init__.pyj
+                # c.always_null_pr = True
+                pass
+
+            self.vDev.on("change:metrics:level", self.onTrigger)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onTrigger)
+        Base.remove(self)
+
+
+
+class Saturation(RGB):
+
+    def add_to_callback(self):
+
+        self.name = "Saturation"
+
+        c = None
+        self.detectType = {"deviceType": "switchRGB"}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.Saturation
+                , "float"
+                , {
+                    'get': def():
+                        return self.rgb2hsv(self.rgb).s
+
+                    , 'set': def(value):
+                        hsv = self.rgb2hsv(self.rgb)
+                        hsv.s = value
+                        rgb = self.hsv2rgb(hsv)
+                        self.vDev.performCommand("exact", {"red": rgb.r, "green": rgb.g, "blue": rgb.b})
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+        Base.remove(self)
+
+
+class ServiceLabelIndex(Base):
+    def add_to_callback(self):
+        self.vDev = -1
+        self.name = "ServiceLabelIndex"
+
+        c =  self.service.addCharacteristic(
+            HomeKit.Characteristics.ServiceLabelIndex
+            , "uint8"
+            , {
+                'get': def():
+                    return self.ServiceLabelIndex
+            }
+        )
+        return c
+
+
+class ServiceLabelNamespace(Base):
+    def add_to_callback(self):
+        self.vDev = -1
+        self.name = "ServiceLabelNamespace"
+        return self.service.addCharacteristic(
+            HomeKit.Characteristics.ServiceLabelNamespace
+            , "uint8"
+            , {
+                'get': def():
+                    return 1    # Numbers
+            }
+        )
+
+
+class SlatType(Base):
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Slat Type"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.SlatType
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Vertical"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 1 if check in t else 0
+                            else:
+                                return 1 if t == check else 0
+
+                        return 0    # Default == Horizontal
+                }
+            )
+
+        return c
+
+
+class SmokeDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Smoke Detected"
+        self.type = HomeKit.Characteristics.SmokeDetected
+        self.detectType = {"probeType": ["smoke", "alarm_smoke", "alarmSensor_smoke"] }
+
+
+class StatusActive(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Status Active"
+
+        c = None
+        self.detectType = { "probeType": ["alarm_system", "alarmSensor_system"] }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.StatusActive
+                , "bool"
+                , {
+                    'get': def():
+                        value = False
+                        level = self.vDev.get("metrics:level")
+                        if level?:
+                            level = level.toString()
+                            value = level.toLowerCase() == "off"    # if 'off', the system's working properly
+                        # console.log(self.name + ": " + value)
+                        return value
+                        # return False
+                }
+            )
+
+        else:
+
+            self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x71]  # Alarm
+            if self.check_alarm_supported(self.alarm.system, self.commandClass.data.typeMask.value):
+
+                self.vDev = -1
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.StatusActive
+                    , "bool"
+                    , {
+                        'get': def():
+                            value = True
+                            level = self.commandClass.data[self.alarm.system].status.type
+                            if level? and level == 255:     # alarm activated
+                                value = False
+                            # console.log(self.name + ": " + value)
+                            return value
+                            # return False
+                    }
+                )
+
+
+        return c
+
+
+class StatusFault(BinarySensorState):
+
+    def add_to_callback(self):
+
+        self.name = "Status Fault"
+        self.vDev = -1   # skip marker
+        # _this = self
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.StatusFault
+            , "uint8"
+            , {
+                'get':
+
+                    def():
+                        value = 0   # ok
+                        failed = self.zway.devices[self.id].data.isFailed
+                        if failed?:
+                            value = 1 if failed is True else 0
+                        # console.log(self.name + ": " + value)
+                        return value
+                        # return 1
+            }
+        )
+
+        return c
+
+
+class StatusLowBattery(Base):
+
+    def add_to_callback(self):
+
+        self.name = "StatusLowBattery"
+        self.vDev = -1   # skip marker
+        # _this = self
+
+        self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x80] # Battery
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.StatusLowBattery
+            , "uint8"
+            , {
+                'get':
+
+                    def():
+                        value = 1   # Low Battery
+                        level = self.commandClass.data.last.value
+                        if level?:
+                            value = 1 if level < 15 else 0
+                        # console.log(self.name + ": " + value)
+                        return value
+            }
+        )
+
+        return c
+
+
+class StatusTampered(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Status Tampered"
+        self.type = HomeKit.Characteristics.StatusTampered
+        self.detectType = {"probeType": ["tampered", "alarm_burglar", "alarmSensor_burglar"] }
+
+    def add_to_callback(self):
+
+        c = BinarySensorState.add_to_callback(self)
+
+        if c is None:
+
+            self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x71]  # Alarm
+            if self.check_alarm_supported(self.alarm.burglar, self.commandClass.data.typeMask.value):
+
+                self.vDev = -1
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.StatusTampered
+                    , "uint8"
+                    , {
+                        'get': def():
+                            value = 0
+                            level = self.commandClass.data[self.alarm.burglar].status.type
+                            if level? and level == 255:     # alarm activated
+                                value = 1
+                            # console.log(self.name + ": " + value)
+                            return value
+                            # return 1
+                    }
+                )
+
+        return c
+
+
+class SwingMode(Base):
+
+    # This is quite a generic implementation
+    # Anyone out there with a use case?
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Swing Mode"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentSlatState
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Swing"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 1 if check in t else 0
+                            else:
+                                return 1 if t == check else 0
+
+                        return 0    # Default == Not Swinging
+                }
+            )
+
+        return c
+
+
+class TargetHeatingCoolingState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "TargetHeatingCoolingState"
+
+        c = None
+        d = -1
+
+        dev = devices.pDevice(self.id)
+        self.state = 1  # Heating
+
+        cc =  dev.supportedCommandClass(0x40)  # ThermostatMode
+
+        if cc is not None:
+
+            self.commandClass = cc
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.state
+
+                    , 'set': def(value):
+
+                        try:
+                            if value == 1:
+                                self.commandClass.Set(self.thermostat.heat)
+                            elif value == 2:
+                                self.commandClass.Set(self.thermostat.cool)
+                            elif value == 3:
+                                self.commandClass.Set(self.thermostat.auto)
+                            else:
+                                self.commandClass.Set(self.thermostat.off)
+
+                            self.state = value
+
+                        except:
+                            pass
+                }
+            )
+
+            return c
+
+        cc = dev.supportedCommandClass(0x43)  # ThermostatSetPoint
+
+        if cc is not None:
+            self.commandClass = cc
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        mode = self.commandClass.data.modemask.value
+
+                        if v'mode & self.thermostat.heating':
+                            return 1    # Heating
+                        elif v'mode & self.thermostat.cooling':
+                            return 2    # Cooling
+                        elif v'mode & self.thermostat.automatic':
+                            return 3    # Auto
+                        else:
+                            return 0    # Off
+                    , 'set': def():
+                        # There's nothing we can do here!
+                        return
+                }
+            )
+
+        return c
+
+
+# According to the Z-Wave Plus v2 Device Type Specification, the following classes have to be distinguished
+# Class A: no position/endpoint awareness
+# Class B: endpoint aware
+# Class C: position & endpoint aware
+# Only Class C is able to handle 'exact' position requests.
+# Thus Class A & B demand special code for great user experience!
+# Additionally, we provide a 'SIMPLE' implementation for SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING devices
+
+class TargetPositionA(Base):
+
+    # Class A devices are neither position nor endpoint aware
+    # Thus the only reasonable command set is StartLevelChange / StopLevelChange
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            self.vDev = d
+            self.target = 0 # up
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        t = 0xFF if self.target == 0 else 0x00
+                        return self.map_zway_to_hk(t)
+
+                    , 'set': def(value):
+
+                        d = devices.create(self.vDev)
+                        if d?:
+
+                            # acc. Z-Wave Plus v2 Device Type Specification:
+                            # 0x00 == StopLevelChange
+                            # 0xFF (100) == Up or Down
+                            if value == 0 or value == 100:
+                                if value == 0:
+                                    d.commandClass.StopLevelChange(def():
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    )
+                                else:
+                                    self.target = 0 if self.target == 1 else 1
+                                    d.commandClass.StartLevelChange(self.target, def():
+                                        # HK Directions (0: down, 1: up) != Z-Way directions (0: up, 1: down)
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, self.target ^ 1)
+                                    )
+                                return
+
+                            # HK Directions (0: down, 1: up) != Z-Way directions (0: up, 1: down)
+                            if value >= 50:
+                                self.target = 0  # up
+                                d.commandClass.StartLevelChange(0, def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 1)
+                                )
+                            elif value < 50:
+                                self.target = 1  # down
+                                d.commandClass.StartLevelChange(1, def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 0)
+                                )
+
+                            # Trigger to send 'Stopped' status after 20s
+                            setTimeout(def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                , 20
+                            )
+                }
+            )
+
+        return c
+
+class TargetPositionB(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d is not None:
+            self.vDev = d
+            self.target = None
+            self.display = self.vDev.get("metrics:level")
+            self.trigger = None
+
+            self.set_level = _.debounce(def(target):
+                dev = devices.create(self.vDev)
+                if dev?:
+                    dev.commandClass.StopLevelChange(def():
+                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                        dev.commandClass.Get(def():
+                            current = dev.commandClass.data.level.value
+                            dev.commandClass.Set(target, 0xff, def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                            0 if current > target else 1)
+                            )
+                        )
+                    )
+            , 500)
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.display)
+
+                , 'set': def(value):
+
+                    current = self.vDev.get("metrics:level")
+
+                    if 0 < value < 100:
+                        self.target = self.display = self.map_hk_to_zway(value)
+                        self.set_level(self.target)
+
+                    # => if value == 0 or value == 100
+                    if self.trigger is None:
+                        self.display = self.map_hk_to_zway(value)
+                        self.trigger = _.delay(def():
+                            self.trigger = None
+                            self.target = self.display
+                            dev = devices.create(self.vDev)
+                            if dev?:
+                                dev.commandClass.StopLevelChange(def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    dev.commandClass.Get(def():
+                                        current = self.vDev.get("metrics:level")
+                                        dev.commandClass.Set(self.target, 0xff, def():
+                                            self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                        0 if current > self.target else 1)
+                                        )
+                                    )
+                                )
+                        , 500)
+
+                    else:
+
+                        clearTimeout(self.trigger)
+                        self.trigger = None
+                        dev = devices.create(self.vDev)
+                        if dev?:
+                            dev.commandClass.StopLevelChange(def():
+                                self.target = None
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                dev.commandClass.Get(def():
+                                    self.display = self.vDev.get("metrics:level")
+                                )
+                            )
+
+                    return
+
+                }
+            )
+
+            self.onPosition = def():
+                current = self.vDev.get("metrics:level")
+                # out("Pos: " + current)
+                if self.target == None:
+                    self.display = current
+                elif self.target == current:
+                    self.target = None
+                    self.display = current
+                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+
+                self.onLevelChange()
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+
+
+class TargetPositionC(Base):
+
+    # CLASS C devices are endpoint & position aware!
+
+    def add_to_callback(self):
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            self.vDev = d
+            self.target = None
+            self.display = self.vDev.get("metrics:level")
+            self.trigger = None
+
+            self.set_level = _.debounce(def(target):
+                dev = devices.create(self.vDev)
+                if dev?:
+                    dev.commandClass.StopLevelChange(def():
+                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                        dev.commandClass.Get(def():
+                            current = dev.commandClass.data.level.value
+                            dev.commandClass.Set(target, 0xff, def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                            0 if current > target else 1)
+                            )
+                        )
+                    )
+            , 500)
+
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        # console.log("@get TargetPosition")
+                        return self.map_zway_to_hk(self.display)
+
+                    , 'set': def(value):
+
+                        current = self.vDev.get("metrics:level")
+
+                        if 0 < value < 100:
+                            self.target = self.display = self.map_hk_to_zway(value)
+                            self.set_level(self.target)
+
+                        # => if value == 0 or value == 100
+                        if self.trigger is None:
+                            self.display = self.map_hk_to_zway(value)
+                            self.trigger = _.delay(def():
+                                self.trigger = None
+                                self.target = self.display
+                                dev = devices.create(self.vDev)
+                                if dev?:
+                                    dev.commandClass.StopLevelChange(def():
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                        dev.commandClass.Get(def():
+                                            current = self.vDev.get("metrics:level")
+                                            dev.commandClass.Set(self.target, 0xff, def():
+                                                self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                            0 if current > self.target else 1)
+                                            )
+                                        )
+                                    )
+                            , 500)
+
+                        else:
+
+                            clearTimeout(self.trigger)
+                            self.trigger = None
+                            dev = devices.create(self.vDev)
+                            if dev?:
+                                dev.commandClass.StopLevelChange(def():
+                                    self.target = None
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    dev.commandClass.Get(def():
+                                        self.display = self.vDev.get("metrics:level")
+                                    )
+                                )
+
+                        return
+
+                    }
+                )
+
+            self.onPosition = def():
+                current = self.vDev.get("metrics:level")
+                out("Pos: " + current)
+                if self.target == None:
+                    self.display = current
+                elif self.target == current:
+                    self.target = None
+                    self.display = current
+                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+
+                self.onLevelChange()
+
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class TargetPositionSimple(Base):
+
+    # SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING devices are operated via CommandClass Basic
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        # GENERIC_TYPE_WINDOW_COVERING devices sometimes (always?) seem to be configurable
+        # with respect to the travel time - in parameters 177 - 180
+        # We try to retrieve this to simulate adequate user feedback
+        self.get_config = def():
+            pDev = devices.pDevice(self.id)
+            if pDev?:
+                cc = pDev.commandClass(0x70)    # Configuration
+                try:
+                    u1 = cc.data["177"].val.value
+                    u2 = cc.data["178"].val.value
+                    d1 = cc.data["179"].val.value
+                    d2 = cc.data["180"].val.value
+                except:
+                    return
+
+                up = (256 * u1 + u2) * 0.1  # acc. Merten device manual => seconds
+                down = (256 * d1 + d2) * 0.1
+                self.timing = {"up": up, "down": down}
+            return
+
+        pDev = devices.pDevice(self.id)
+        if pDev?:
+            cc = pDev.commandClass(0x20)    # Basic
+            if cc?:
+                self.commandClass = cc
+                self.vDev = -1
+                self.timing = {"up": 20, "down": 20}
+
+                # GENERIC_TYPE_WINDOW_COVERING devices sometimes (always?) seem to be configurable
+                # with respect to the travel time - in parameters 177 - 180
+                # We try to retrieve this to simulate adequate user feedback
+                cc = pDev.commandClass(0x70)    # Configuration
+                if cc?:
+                    cc.Get(177)
+                    cc.Get(178)
+                    cc.Get(179)
+                    cc.Get(180, self.get_config)
+
+                self.sequence = [0x00, 0xFF, 0xFF, 0x00]    # down, stop, up, stop
+                self.state = 0
+                self.target = None
+                self.latest_command = 0x00
+                self.latest_travel_start = None
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.TargetPosition
+                    , "uint8"
+                    , {
+                        'get': def():
+                            if self.target is not None:
+                                return self.map_zway_to_hk(self.target)
+                            elif self.latest_command is not None:
+                                return self.map_zway_to_hk(self.latest_command)
+
+                            return 0    # whatever
+
+                        , 'set': def(value):
+
+                            time = v'new Date()'.getTime() # ms
+                            delta = time - self.latest_travel_start
+                            compare = self.timing.up if self.latest_command is 0xFF else self.timing.down
+
+                            if delta < compare * 1000:
+                                # new command received within pre-calculated travel time
+                                # ... triggers the stop - reverse sequence.
+                                self.state = (self.state + 1) % 4
+                                self.target = self.sequence[self.state]
+                                if self.target != self.latest_command:
+                                    # educated guess
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 3)  # Stopped anywhere
+                                else:
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                1 if self.target == 0xFF else 0)  # up or down
+                                    _.delay(def():
+                                            self.target = None
+                                            # Stopped after travel time => @ end position
+                                            self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)
+                                        , (self.timing.up if self.target == 0xFF else self.timing.down) * 1000
+                                    )
+
+                                self.commandClass.Set(self.target)
+                                self.latest_command = self.target
+                                self.latest_travel_start = time
+                                return
+
+                            self.state = 2 if value >= 50 else 0
+                            self.target = self.sequence[self.state]
+                            self.latest_command = self.target
+                            self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                        1 if self.target == 0xFF else 0)  # up / down
+                            self.commandClass.Set(self.target)
+                            _.delay(def():
+                                    self.target = None
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped @ end
+                                , (self.timing.up if self.target == 0xFF else self.timing.down) * 1000
+                            )
+
+
+                    }
+                )
+
+        return c
+
+
+class TargetTemperature(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Target Temperature"
+        c = None
+
+        self.detectType = { "deviceType": "thermostat" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+
+            self.vDev = d
+            # self.value = self.vDev.get("metrics:level")
+
+            # # override performCommand to catch the TargetTemperature from the setting operation
+            # self.perfCmd = self.override(self.vDev, 'performCommand', def(original):
+            #     that = self
+            #     return def(command):
+            #
+            #         if command == "exact":
+            #             level = arguments[1]
+            #             if level? and level.level?:
+            #                 that.value = parseFloat(level.level)
+            #
+            #         return original.apply(this, arguments)
+            # )
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetTemperature
+                , "float"
+                , {
+                    'get': def():
+                        return self.vDev.get("metrics:level")
+
+                    , 'set': def(value):
+                        # as of 20190112 this raises (with the Danfoss) due to a bug in Zwave/index.js
+                        # self.vDev.performCommand('exact', {"level": value})
+
+                        pD = devices.pDevice(self.id)
+                        cc = pD.supportedCommandClass(0x43)     # Thermostat SetPoint
+                        if cc is not None:
+                            mm = cc.data.modemask.value
+                            for t in self.thermostat:
+                                bit = v'1 << self.thermostat[t]'
+                                # we take the first mode that fits!
+                                if v'(mm & bit)' != 0:
+                                    mode = self.thermostat[t]
+                                    try:
+                                        min = cc.data[mode].min.value
+                                    except:
+                                        min = 0
+                                    try:
+                                        max = cc.data[mode].max.value
+                                    except:
+                                        max = 100
+
+                                    if min <= value <= max:
+                                        try:
+                                            cc.Set(mode, value)
+                                        except:
+                                            pass
+                                        else:
+                                            break
+                }
+            )
+
+        return c
+
+    # def remove(self):
+    #
+    #     # remove the "performCommand" override if we remove the device
+    #     if self.vDev? and self.perfCmd?:
+    #         self.override_reset(self.vDev, "performCommand", self.perfCmd)
+    #
+    #     Base.remove(self)
+
+
+class TargetTiltAngle(SlatSupport):
+
+    def __init__(self, bridge4kt, id):
+        SlatSupport.__init__(self, bridge4kt, id)
+        self.name = "Target Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetTiltAngle
+        self.detectType = {"deviceType": "switchMultilevel"}
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            pT = d.get("deviceType")        # this is to doublecheck in case we detect the device just by its tag
+            if pT == "switchMultilevel":
+                self.vDev = d
+                self.target = self.display = self.vDev.get("metrics:level")
+
+                self.performCommand = _.debounce(def(target):
+                    self.vDev.performCommand('exact', {"level": target})
+                , 500 )
+
+                c = self.service.addCharacteristic(
+                    self.type
+                    , "int"
+                    , {
+                        'get': def():
+                            return self.map_zway_to_hk(self.display)
+
+                        , 'set': def(position):
+                            v = self.map_hk_to_zway(position)
+                            self.target = self.display = v
+                            self.performCommand(v)
+                    }
+                )
+
+                self.onPosition = def():
+                    current = self.vDev.get("metrics:level")
+                    if self.target is None:
+                        self.display = current
+                    elif self.target == current:
+                        self.target = None
+
+                    self.onLevelChange()
+
+                self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+
+
+class TargetHorizontalTiltAngle(TargetTiltAngle):
+    def __init__(self, bridge4kt, id):
+        TargetTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Target Horizontal Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetHorizontalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Horizontal"}
+
+
+class TargetVerticalTiltAngle(TargetTiltAngle):
+    def __init__(self, bridge4kt, id):
+        TargetTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Target Vertical Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetVerticalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Vertical"}
+
+
+class TemperatureDisplayUnits(Base):
+
+    def add_to_callback(self):
+
+        self.name = "TemperatureDisplayUnits"
+        c = None
+        self.vDev = -1
+
+        self.ccMode = devices.pDevice(self.id).commandClass(0x40)  # ThermostatMode
+        self.ccSetPoint = devices.pDevice(self.id).commandClass(0x43)  # ThermostatSetPoint
+        self.mode = None    # this is only used if HK tried to change the DisplayUnits
+
+        if self.ccMode? or self.ccSetPoint?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TemperatureDisplayUnits
+                , "uint8"
+                , {
+                    'get': def():
+
+                        # if HK ever tried to change the mode,
+                        # we return this setting - to ensure consistency
+                        if self.mode is not None:
+                            return self.mode
+
+                        # in all other cases: We return the true settings!
+
+                        mode = None
+                        if self.ccMode?:
+                            mode = self.ccMode.data.mode.value
+                        else:
+                            modemask = self.ccSetPoint.data.modemask.value
+                            i = 0
+                            if modemask > 0:
+                                while v'modemask & 1 == 0':
+                                    modemask = v'modemask >>> 1'
+                                    i += 1
+                                    if modemask == 0:
+                                        break
+
+                            if i > 0:
+                                mode = i
+
+                        if mode is not None:
+                            scale = self.ccSetPoint.data[self.mode].scaleString.value
+                            if scale? and scale == "°F":
+                                return 1
+
+                        return 0    # °C
+
+                    , 'set': def(value):
+                        self.mode = value
+                }
+            )
+
+        return c
+
+
+def create(bridge4kt, realID, definition):
+
+    known_characteristics = {
+        "BatteryLevel": BatteryLevel,
+        # "Brightness": Brightness,
+        "Brightness2RGB": Brightness2RGB,   # to calculate RGB from Brightness
+        "CarbonDioxideDetected": CarbonDioxideDetected,
+        # "CarbonDioxideLevel": CarbonDioxideLevel,
+        "CarbonMonoxideDetected": CarbonMonoxideDetected,
+        # "CarbonMonoxideLevel": CarbonMonoxideLevel,
+        # "CarbonMonoxidePeakLevel": CarbonMonoxidePeakLevel,
+        "ChargingState": ChargingState,
+        "ContactSensorState": ContactSensorState,
+        "CurrentHeatingCoolingState": CurrentHeatingCoolingState,
+        "CurrentHorizontalTiltAngle": CurrentHorizontalTiltAngle,
+        "CurrentPositionA": CurrentPositionSimple,     # event based position determination
+        "CurrentPositionB": CurrentPositionB,   # SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
+        "CurrentPositionC": CurrentPositionC,   # SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
+        "CurrentPositionSimple": CurrentPositionSimple,     # event based position determination
+        # "CurrentPower": CurrentPower,
+        "CurrentSlatState": CurrentSlatState,
+        "CurrentTemperature": CurrentTemperature,
+        # "CurrentTemperatureThermostat": CurrentTemperatureThermostat,   # specific
+        "CurrentTemperatureThermostat": CurrentTemperature,   # specific
+        "CurrentTiltAngle": CurrentTiltAngle,
+        "CurrentVerticalTiltAngle": CurrentVerticalTiltAngle,
+        "HoldPosition": HoldPosition,
+        "Hue": Hue,
+        "LeakDetected": LeakDetected,
+        "MotionDetected": MotionDetected,   # as in ZWave.Me, this is the default for "general_purpose" binary sensors
+        "Name": Name,
+        "OccupancyDetected": OccupancyDetected,
+        "On": On,
+        "OutletInUse": OutletInUse,
+        "PositionState": PositionState,
+        "ProgrammableSwitchEvent": ProgrammableSwitchEvent,
+        "Saturation": Saturation,
+        "ServiceLabelIndex": ServiceLabelIndex,
+        "ServiceLabelNamespace": ServiceLabelNamespace,
+        "SlatType": SlatType,
+        "SmokeDetected": SmokeDetected,
+        "StatusActive": StatusActive,
+        "StatusFault": StatusFault,
+        "StatusLowBattery": StatusLowBattery,
+        "StatusTampered": StatusTampered,
+        "SwingMode": SwingMode,
+        "TargetHeatingCoolingState": TargetHeatingCoolingState,
+        "TargetHorizontalTiltAngle": TargetHorizontalTiltAngle,
+        "TargetPositionA": TargetPositionA, # SPECIFIC_TYPE_CLASS_A_MOTOR_CONTROL
+        "TargetPositionB": TargetPositionB, # SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
+        "TargetPositionC": TargetPositionC, # SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
+        "TargetPositionSimple": TargetPositionSimple,   # SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING, without any feedback
+        "TargetTiltAngle": TargetTiltAngle,
+        "TargetVerticalTiltAngle": TargetVerticalTiltAngle,
+        "TargetTemperature": TargetTemperature,
+        "TemperatureDisplayUnits": TemperatureDisplayUnits
+    }
+
+    # console.logJS(definition)
+
+    if definition in known_characteristics:
+        # 'new' is necessary here to explicitly advise RapydScript to create an object
+        c = new known_characteristics[definition](bridge4kt, realID)
+        return c
+
+    console.log(".. HK Characteristic '" + definition + "' not implemented")
+    return None

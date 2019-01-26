@@ -1,0 +1,11 @@
+@external
+class HomeKit:
+    pass
+
+@external
+class HKService:
+    pass
+
+@external
+class HKCharacteristic:
+    pass

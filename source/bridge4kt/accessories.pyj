@@ -1,0 +1,285 @@
+@external
+class HomeKit:
+    pass
+
+@external
+class HKAccessory:
+    def addService(self, type, name, id):
+        pass
+
+@external
+class HKAccessoryCollection:
+    def addAccessory(self, name, manufacturer, model, serialNumber, id) -> HKAccessory:
+        pass
+
+import services
+import devices
+
+def out():
+    for key in arguments:
+        if _.isObject(arguments[key]):
+            arguments[key] = JSON.stringify(arguments[key])
+
+    debugPrint.apply(this, arguments)
+    return True
+
+
+class Base():
+
+    def __init__(self, bridge4kt, id):
+
+        self.bridge = bridge4kt
+        self.id = id
+
+        self.name = ''
+
+        self.config = {
+            "name": "",
+            "manufacturer": "",
+            "model": "",
+            "serial": ""
+        }
+
+        self.services = {}
+        self.definition = []
+        self.accessory = None
+
+    def add_to(self, collection: HKAccessoryCollection):
+
+        console.log("HK Accessory '" + self.name  + "' created")
+        self.accessory = collection.addAccessory(self.config.name,
+                                                 self.config.manufacturer,
+                                                 self.config.model,
+                                                 self.config.serial)
+
+        return self.accessory
+
+    def update(self):
+        pass
+
+    def remove(self):
+
+        console.log("Removing HK Accessory '" + self.name + "'")
+
+        for service in self.services:
+            self.services[service].remove()
+
+        if self.accessory?:
+            self.accessory.remove()
+
+        self.services = {}
+        self.accessory = None
+
+
+class Main(Base):
+
+    def __init__(self, bridge4kt, id):
+
+        Base.__init__(self, bridge4kt, id)
+
+        self.config = {
+            "name": "Bridge4KT",
+            "manufacturer": "Ralph Wetzel",
+            "model": "1.0",
+            "serial": "Not provided"
+        }
+
+    def add_to(self, collection: HKAccessoryCollection):
+
+        self.name = "Main"
+        ac = Base.add_to(self, collection)
+
+        s = ac.addService("49FB9D4D-0FEA-4BF1-8FA6-E7B18AB86DCE", "Bridge4KT")
+        s.addCharacteristic(HomeKit.Characteristics.State, "uint8" , 0, ["pr", "ev"], {"maxValue":1, "minValue":0, "minStep":1})
+        s.addCharacteristic(HomeKit.Characteristics.Version, "string", "1.0", ["pr", "ev"])
+        s.addCharacteristic(HomeKit.Characteristics.ControlPoint, "data", "", ["pr", "pw", "ev"])
+
+        return ac
+
+
+class Creator(Base):
+
+    # This are the known Accessory categories
+    known_acc = [
+    #    "Fan",
+        "Garage",
+        "Lightbulb",
+    #    "DoorLock",
+        "Outlet",
+        "Switch",
+        "Thermostat",
+        "Sensor",
+    #    "SecuritySystem",
+        "Door",
+        "Window",
+        "WindowCovering",
+        "ProgrammableSwitch",
+    #    "RangeExtender",
+    #    "IPCamera",
+    #    "VideoDoorBell",
+    #    "AirPurifier"
+    ]
+
+    def __init__(self, bridge4kt, id, definition):
+
+        Base.__init__(self, bridge4kt, id)
+
+        if not _.isArray(definition):
+            definition = [definition]
+
+        self.definition = definition
+
+        pDev = devices.pDevice(self.id)
+
+        name = None
+        manufacturer = None
+        model = None
+        sn = None
+
+        data = pDev.data
+        if data?:
+            name = data.givenName.value
+            manufacturer = data.vendorString.value
+
+        cc = pDev.commandClass(0x72)    # ManufacturerSpecific
+        if cc?:
+            data = cc.data
+            if data?:
+                model = data.productId.value
+                sn = data.serialNumber.value
+
+        # this is a bit slow - but save!
+        if name is None:
+            name = "Device without name"
+        if manufacturer is None:
+            manufacturer = "Unknown manufacturer"
+        if model is None:
+            model = "No model identifier"
+        if sn is None:
+            sn = "Not provided"
+        elif _.isArray(sn):
+            sn = sn.join('.')
+            sn = sn.replace(v'/^(0.)*/', '')    # remove any zero + dots
+
+        self.config = {
+            "name": name ,
+            "manufacturer": manufacturer,
+            "model": model,
+            "serial": sn
+        }
+
+
+    def add_to(self, collection: HKAccessoryCollection):
+
+        # Primary Service shall be equal to Accessory Category
+        is_primary = False
+        s = self.definition[0]
+
+        if s in self.known_acc:
+            self.name = s
+            is_primary = True
+        elif s.toLowerCase().indexOf('sensor') > -1:
+            self.name = "Sensor"
+            is_primary = True
+        elif s.toLowerCase().indexOf('windowcovering') > -1:
+            self.name = "WindowCovering"
+            is_primary = True
+        elif s.toLowerCase().indexOf('lightbulb') > -1:
+            self.name = "Lightbulb"
+            is_primary = True
+        elif s.toLowerCase().indexOf('programmableswitch') > -1:
+            # is named "StatelessProgrammableSwitch" @ the services
+            self.name = "ProgrammableSwitch"
+            is_primary = True
+        else:
+            self.name = "Other"
+
+        # don't ask why - yet accessories with aid==7 create trouble
+        # => skip 7!
+        if collection.nextAID == 7:
+            collection.nextAID += 1
+
+        ac = Base.add_to(self, collection)
+
+        index = 0
+
+        for index, service in enumerate(self.definition):
+
+            if service == "StatelessProgrammableSwitch":
+                detectType = {"deviceType": "sensorDiscrete"}
+                vDev = devices.detect_vDev(self.bridge.controller, self.id, detectType)
+
+                if vDev?:
+                    states = vDev.get("metrics:discreteStates")
+
+                    # states looks like:
+                    # {
+                    #     "10": {
+                    #         "cnt": "1",
+                    #         "action": "press",
+                    #         "type": "B"
+                    #     },
+                    #     "11": {
+                    #         "cnt": "1",
+                    #         "action": "release",
+                    #         "type": "B"
+                    #     },
+                    # ...,
+                    #     "20": {
+                    #         "cnt": "1",
+                    #         "action": "press",
+                    #         "type": "B"
+                    #     },
+                    # ...
+
+                    inst = {}
+                    sli = 0
+
+                    for ds in states:
+                        # the last character differentiates the modes
+                        # the first(s) the button
+                        i = ds.slice(0,-1)
+                        if not inst[i]?:
+                            s = services.create(self.bridge, self.id, service)
+                            if s?:
+                                # provide some extra info so the service knows what to care for
+                                s.responsible = i
+                                s.ServiceLabelIndex = sli = sli + 1
+                                # 'done' marker
+                                inst[i] = True
+
+                                self.services[service + "." + i] = s
+                                # s.add_to(ac, index == 0 and is_primary is True)
+                                s.add_to(ac)
+
+                    if len(inst) > 0:
+                        service = "ServiceLabel"
+                        s = services.create(self.bridge, self.id, service)
+                        if s?:
+                            self.services[service] = s
+                            s.add_to(ac)
+
+            else:
+                s = services.create(self.bridge, self.id, service)
+                if s?:
+                    self.services[service] = s
+                    s.add_to(ac, index == 0 and is_primary is True)
+
+        # add Bridging State Service to all Accessories
+        bs = services.BridgingState()
+        bs.add_to(ac)
+
+        return ac
+
+    def update(self):
+        for service in self.services:
+            self.services[service].update()
+
+
+def create(bridge4kt, realID, definition):
+
+    assert(bridge4kt?)
+    assert(realID?)
+    assert(definition?)
+
+    return Creator(bridge4kt, realID, definition)

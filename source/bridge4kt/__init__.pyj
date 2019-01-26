@@ -1,0 +1,445 @@
+@external
+class fs:
+    @staticmethod
+    def load():
+        pass
+
+
+@external
+class AutomationModule:
+    # def __init__(self, id, controller):
+    #    pass
+    def init(self, config):
+        pass
+
+
+@external
+class HomeKit:
+    pass
+
+
+@external
+class HKAccessoryCollection:
+    pass
+
+
+@external
+class HKService:
+    pass
+
+import accessories
+import devices
+import services
+
+
+def out():
+    for key in arguments:
+        # debugPrint(key)
+        if _.isObject(arguments[key]):
+            arguments[key] = JSON.stringify(arguments[key])
+
+    debugPrint.apply(this, arguments)
+    return True
+
+class Bridge4KT(AutomationModule):
+
+    def __init__(self, id, controller):
+        AutomationModule.call(self, id, controller)
+
+    def merge_definition_with_tags(self, pDev: Object, definition: [String]) -> [String]:
+
+        if not pDev?:
+            return None
+
+        if not definition?:
+            definition = []
+
+        primary = definition[0] if definition[0]? else None
+        secondary = definition.slice(1) if definition? else []
+        skip = []
+
+        devices = pDev.vDevices
+
+        if not devices? or len(devices) < 1:
+            return None
+
+        for d in devices:
+            device = devices[d]
+
+            tags = device.tags
+
+            for tag in tags:
+                t = str.split(tag, ':')
+
+                if len(t) == 1:
+                    # make it a primary if primary not defined yet
+                    if not primary?:
+                        primary = t[0]
+                    else:
+                        # alternatively: make it a secondary
+                        pos = secondary.indexOf(t[0])
+                        if pos == -1:
+                            secondary.push(t[0])
+                elif len(t) == 2:
+                    if t[1].toLowerCase() == 'primary':
+                        if primary?:
+                            # make the current primary a secondary
+                            pos = secondary.indexOf(primary)
+                            if pos == -1:
+                                secondary.push(primary)
+                        # ... and add the new one
+                        primary = t[0]
+                    elif t[1].toLowerCase() == 'skip':
+                        pos = skip.indexOf(t[0])
+                        if pos == -1:
+                            skip.push(t[0])
+
+        # appy the skip list
+        if len(skip) > 0:
+            for s in skip:
+                if primary == s:
+                    primary = None
+                else:
+                    pos = secondary.indexOf(s)
+                    if pos != -1:
+                        secondary.splice(pos, 1)
+
+            # if there's no more primary, make the first secondary the primary
+            if not primary? and len(secondary) > 0:
+                primary = secondary.shift(1)
+
+        if primary?:
+            # make the primary - if it exists - the first value of the returned list
+            secondary.unshift(primary)
+            # remove duplicates
+            retval = _.uniq(secondary)
+        elif len(skip)>0:
+            # there's no definition generated - yet there were tags present!
+            retval = []
+        else:
+            retval = None
+
+        return retval
+
+    def process_changes(self, vDev_from_zway: Object):
+
+        # dummy
+        instance = 0
+
+        vDev = devices.create(vDev_from_zway)
+
+        if vDev is None:
+            return None
+
+        # check for / create the pDevice
+        pDev = self.devices[vDev.parentID]
+        if not pDev?:
+            self.devices[vDev.parentID] = pDev = devices.pDevice(vDev.parentID)
+
+        # add the vDev to the vDevices of this pDev
+        pDev.vDevices[vDev.zway.id] = vDev
+
+        # to hold the known configuration
+        config = pDev.config
+        if not config?:
+            pDev.config = config = {}
+
+        # identify the pDev
+        id = None
+        definition = None
+
+        if self.known_devices[pDev.manufacturerID]?:
+            id = pDev.manufacturerID
+            definition = self.known_devices[id]
+        elif self.known_generic[pDev.genericID]?:
+            id = pDev.genericID
+            definition = self.known_generic[id]
+        elif self.known_fp[pDev.hashedFingerprint]?:
+            id = pDev.hashedFingerprint
+            definition = self.known_fp[id]
+
+        if not _.isArray(definition):
+            definition = [definition]
+
+        # "Sensor" will be specified based on the detected / detectable capabilities
+        dd = []
+        for d in definition:
+            if d == "Sensor":
+                sensors = services.check_sensor_capabilities(self, pDev)
+                if sensors is not None:
+                    dd.extend(sensors)
+                    id = "detection based on " + id
+            else:
+                dd.append(d)
+
+        if len(dd) > 0:
+            definition = dd
+        else:
+            definition = None
+            id = None
+
+        # with definition == None we get the "tags only" definition
+        d = self.merge_definition_with_tags(pDev, None)
+        if d?:
+            if definition?:
+                # if we found the device AND have some tags => "modified" config
+                id = "modification of " + id
+                definition = self.merge_definition_with_tags(pDev, definition)
+            else:
+                # otherwise it's just "custom" in the sense of "made by tags"
+                id = "custom"
+                definition = d
+
+        # if we know this device
+        if id? and definition?:
+
+            if pDev.accessory?:
+                if config.definition? and config.definition != definition:
+                    # definition of this device changed
+                    pDev.accessory.remove()
+                    pDev.accessory = None
+                    config.definition = None
+                else:
+                    # definition still valid; update!
+                    pDev.accessory.update()
+
+
+            if not pDev.accessory?:
+
+                # if we know it - let's create the accessories
+                if definition?:
+                    a = accessories.create(self, pDev.id, definition)
+                    if a?:
+                        config.definition = definition
+                        config.id = id
+                        pDev.accessory = a
+                        a.add_to(self.hk.accessories)
+
+        # create config description for UI
+        zway = v'global["zway"]'
+        config_text = ""
+
+        for id in self.devices:
+
+            pDev = self.devices[id]
+
+            data = zway.devices[id].data
+            name = data.givenName.value or ""
+
+            c = "(#" + id + ") " + name + ": "
+
+            cc = pDev.manufacturerID
+            cc += (" / " if len(cc) > 0 else "") + pDev.genericID
+            if pDev.hashedFingerprint?:
+                cc += (" / " if len(cc) > 0 else "") + pDev.hashedFingerprint
+
+            l = []
+            for d in pDev.vDevices:
+                tags = pDev.vDevices[d].tags
+                if tags?:
+                    for tag in tags:
+                        pos = l.indexOf(tag)
+                        if pos == -1:
+                            l.push(tag)
+
+            if len(l) > 0:
+                cc += (" / " if len(cc) > 0 else "") + l.join(", ")
+
+            c += cc + " >> "
+
+            c += pDev.config.id if pDev.config.id? else "Unknown Device"
+            c += ": " + pDev.config.definition.join(", ") if pDev.config.id? else ""
+
+            if len(config_text) > 0:
+                config_text += "\n"
+            config_text += c
+
+        self.config.config = config_text
+
+        self.hk_slow_update()
+
+
+    def init(self, config):
+
+        def parseJSON(content):
+            # strip single line comments
+            c = content.replace(/(\/{2}.*)/g, "")
+            return JSON.parse(c)
+
+        def loadJSON(file):
+            s = fs.load(file)
+            return parseJSON(s)
+
+        def downloadJSON(file):
+            response = http.request({
+                "url": "https://raw.githubusercontent.com/ralphwetzel/Bridge4KT/master/" + file,
+                "method": "GET",
+                "timeout": 5000,
+            })
+            assert(_.isObject(response))
+            if response.status == 200:
+                assert(out("Bridge4KT: '" + file + "' updated from GitHub!"))
+                return parseJSON(response.data)
+
+            return None
+
+        def load_known_definitions(file):
+            kd = downloadJSON(file)
+            if kd is None:
+                kd = loadJSON(self.moduleBasePath() + "/" + file)
+            return kd
+
+        # Get some predefined definitions for better detection performance
+        # Download them - if possible - from the GitHub repository to ensure easy updates
+
+        self.known_devices = load_known_definitions("devices.json")
+        self.known_generic = load_known_definitions("generic.json")
+        self.known_fp = load_known_definitions("fp.json")
+        # self.setup = loadJSON(self.moduleBasePath() + "/setup.json")
+
+        # self.fingerprints = {}
+        self.devices = {}
+
+        AutomationModule.init(self, config)
+
+        zway = v'global["zway"]'
+
+        self.hk = HomeKit(config.name, def(r):
+
+            assert(out('...REQUEST r.method: ', r.method))
+            assert(out('...REQUEST r.path: ', r.path))
+            assert(out('...REQUEST r.data: ', r.data))
+
+            if r.method == "GET" and r.path == "/accessories":
+                s = this.accessories.serialize(r)
+                # assert(out(s))
+                return s
+
+            elif r.method == "PUT" and r.path == "/characteristics" and r.data and r.data.characteristics:
+                for c in r.data.characteristics:
+                    if not _.isUndefined(c.value):
+                        characteristic = this.accessories.find(c.aid, c.iid)
+                        if characteristic:
+                            characteristic.value = c.value
+                        # update subscribers
+                        this.update(c.aid, c.iid)
+
+                    if _.isBoolean(c.ev):
+                        # set event subscription state
+                        r.events(c.aid, c.iid, c.ev)
+
+                return None # 204
+
+            elif r.method == "GET" and r.path[:20] == "/characteristics?id=":
+
+                # Array of characteristics to update
+                accessoriesCharacteristics = r.path[20:].split(',')
+                characteristics = []
+
+                for ac in accessoriesCharacteristics:
+                    item = [int(i) for i in ac.split('.')]
+                    characteristic = this.accessories.find(item[0], item[1])
+                    if characteristic is not None:
+                        # special handling for ProgrammableSwitchEvent
+                        null_pr = characteristic.always_null_pr
+                        if null_pr? and null_pr == True:
+                            characteristics.push({'aid': item[0], 'iid': item[1], 'value': None})
+                        else:
+                            characteristics.push({'aid': item[0], 'iid': item[1], 'value': characteristic.value})
+
+                retval = {"characteristics": characteristics}
+                assert(out('RESPONSE TO GET /characteristics?id:', retval))
+                return retval
+
+            elif r.path == "/identify":
+                console.log(this.name, "PIN:", this.pin)
+                config.pin = this.pin
+                self.controller.addNotification("notification", "HomeKit PIN: " + this.pin, "module", "Bridge4KT")
+                return None # 204
+        )
+
+        # to ensure that self.hk.update is called at a low frequency (< 1 Hz)
+        # minimizing noise in the network
+        self.hk_slow_update = _.debounce(
+                                def():
+                                    this.hk.update()
+                                .bind(self)
+                                , 1500)
+
+        self.hk.accessories = HKAccessoryCollection(self.hk)
+
+        mac = accessories.Main(self)
+        mac.add_to(self.hk.accessories)
+
+        self.controller.devices.each(
+            def ():
+                if len(arguments) > 0:
+                    vDev = arguments[0]
+                    this.process_changes(vDev)
+            .bind(self)
+        )
+
+        self.onCreated = def():
+            if len(arguments) > 0:
+                vDev = arguments[0]
+                self.process_changes(vDev)
+
+        # self.onChange = def():
+        #     self.hk.update()
+
+        self.onTags = def():
+            if len(arguments) > 0:
+                vDev = arguments[0]
+                self.process_changes(vDev)
+
+        # listen for future device collection changes
+        self.controller.devices.on("created", this.onCreated)
+
+        # listen for future device collection changes
+        self.controller.devices.on("change:tags", this.onTags)
+
+        # if someone changes a Name...
+        self.controller.devices.on("change:metrics:title", self.hk.update)
+
+        # update device tree
+        self.hk_slow_update()
+
+        # self.controller.devices.on("change:metrics:level", this.onChange)
+
+        console.log("HomeKit PIN:", self.hk.pin)
+        self.config.pin = self.hk.pin
+        self.controller.addNotification("notification", "HomeKit PIN: " + self.hk.pin, "module", "Bridge4KT")
+
+    def stop(self):
+
+        AutomationModule.prototype.stop.call(self)
+
+        self.controller.devices.off("created", self.onCreated)
+        # self.controller.devices.off("removed", this.onDeviceRemoved)
+        # self.controller.devices.off("change:metrics:level", self.onChange)
+        self.controller.devices.off("change:tags", self.onTags)
+        self.controller.devices.off("change:metrics:title", self.hk.update)
+
+        for id in self.devices:
+            device = self.devices[id]
+            ac = device.accessory
+            if ac?:
+                ac.remove()
+
+        del self.devices
+        self.devices = {}
+
+        if self.hk?:
+            self.hk.update()
+            self.hk.stop()
+
+        del self.hk.accessories
+        del self.hk
+
+        del self.onCreated
+        del self.onChange
+        del self.onTags
+
+
+window.Bridge4KT = Bridge4KT
+v'_module = Bridge4KT'
