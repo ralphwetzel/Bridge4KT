@@ -166,7 +166,7 @@ Refer to [Motor Control Device](#motor-control-device)
 ## RapydScript
 *Bridge4KT* is written using [RapydScript NG](https://github.com/kovidgoyal/rapydscript-ng) , a "transpiler for a Python like language to JavaScript".
 
-I'd like to express a sincere "Great Job!" to @kovidgoyal for his efforts to maintain this excellent piece of software. It took away much of what I consider as ugliness when working with JavaScript - and allowed me to create a nicely structured easily extendable application.
+I'd like to express a sincere "Great Job!" to [@kovidgoyal](https://github.com/kovidgoyal) for his efforts to maintain this excellent piece of software. It took away much of what I consider as ugliness when working with JavaScript - and allowed me to create a nicely structured easily extendable application.
 
 To compile the [sources](source) into the JavaScript code demanded by Z-Way, there's a [small Python script](source/compile.py) provided.
 
