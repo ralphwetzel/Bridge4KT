@@ -1,0 +1,512 @@
+from characteristics.base import Base, out
+import devices
+
+HomeKit.Characteristics.ColorTemperature = "CE"
+
+class WhiteSupport():
+
+    def fill(self, size, value):
+        return _.range(size).map(def():
+                return value
+            )
+
+    @property
+    def sc(self):
+
+        COLOR_SOFT_WHITE = 0
+        COLOR_COLD_WHITE = 1
+
+        if _.isObject(self.cc):
+            sw = self.cc.data[COLOR_SOFT_WHITE].level.value
+            cw = self.cc.data[COLOR_COLD_WHITE].level.value
+        else:
+            sw = 0
+            cw = 0
+
+        r = {"s": sw, "c": cw}
+        # out(r)
+        return r
+
+    def bc2sc(self, bc):
+
+        b = bc.b
+        c = bc.c
+
+        # https://en.wikipedia.org/wiki/Color_temperature
+        TEMP_SOFT_WHITE = 370  # 2700K
+        TEMP_COLD_UP = 300  # 3300k
+        TEMP_SOFT_COLD = 260  # 3850k (guess)
+        TEMP_SOFT_LOW = 220  # 4400k
+        TEMP_COLD_WHITE = 200  # 5000K
+
+        # COLD [50 ........ 300] ... 400
+        # SOFT 50 ... [220 ......... 400]
+
+        sw = 0xFF if c >= TEMP_SOFT_LOW else 0x00
+        cw = 0xFF if c <= TEMP_COLD_UP else 0x00
+
+        sw *= b / 100
+        cw *= b / 100
+
+        sc = {"s": Math.round(sw),
+              "c": Math.round(cw)}
+
+        return sc
+
+    def sc2bc(self, sc):
+
+        sw = sc.s
+        cw = sc.c
+
+        # https://en.wikipedia.org/wiki/Color_temperature
+        TEMP_SOFT_WHITE = 370  # 2700K
+        TEMP_COLD_UP = 300  # 3300k
+        TEMP_SOFT_COLD = 260  # 3850k (guess)
+        TEMP_SOFT_LOW = 220  # 4400k
+        TEMP_COLD_WHITE = 200  # 5000K
+
+        # COLD [50 ........ 300] ... 400
+        # SOFT 50 ... [220 ......... 400]
+
+        if sw > 0x00:
+            if cw > 0x00:
+                c = TEMP_SOFT_COLD
+                b = (sw + cw) / 2
+            else:
+                c = TEMP_SOFT_WHITE
+                b = sw
+        elif cw > 0x00:
+            c = TEMP_COLD_WHITE
+            b = cw
+        else:
+            c = 50  # ugly cold
+            b = 0
+
+        b /= 0xFF * 100
+
+        bc = {"b": Math.round(b),
+              "c": c}
+
+        return bc
+
+
+class ColorTemperature(Base, WhiteSupport):
+
+    # The HK server does not accept "uint32" as format.
+    # Therefore we late manipulate this after creation!
+    def add_to(self, service):
+        c = Base.add_to(self, service)
+        if c is not None:
+            c.format = "uint32"
+        return c
+
+    def add_to_callback(self):
+
+        self.name = "ColorTemperature"
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+        self.target = None
+
+        COLOR_SOFT_WHITE = 0
+        COLOR_COLD_WHITE = 1
+
+        self.colors = [COLOR_SOFT_WHITE, COLOR_COLD_WHITE]
+
+        self.onTarget = def(target):
+            out(self.name + "#" + self.id + " - onTarget: ", target)
+            if self.target is None:
+                self.target = self.sc2bc(self.sc)
+
+            for item in target:
+                self.target[item] = target[item]
+
+            # dispatch the target reset procedure
+            # self.reset_target()
+
+            # notify HK!
+            self.onLevelChange()
+
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            for col in self.colors:
+                # self.cc.data[col].level.bind(self.onLevelChange)
+                pass
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.ColorTemperature
+                , "uint16"  # this is wrong! Should be "uint32"; to be adjusted manually!!
+                , {
+                    'get': def():
+                        if self.target is None:
+                            bc = self.sc2bc(self.sc)
+                        else:
+                            bc = self.target
+
+                        return bc.c
+
+                    , 'set': def(value):
+
+                        if self.target is None:
+                            self.target = self.sc2bc(self.sc)
+
+                        # in self.target we log the "ToBe" state
+                        self.target.c = value
+
+                        emit = {}
+                        emit["c"] = value
+                        self.bridge.controller.emit("B4KT:WHITE:" + self.id, emit)
+
+                        # we never reset the "ToBe" state
+                        # self.reset_target()
+
+                        sc = self.bc2sc(self.target)
+
+                        out(self.name, self.colors, self.target, sc)
+
+                        # set all 9 colors
+                        cols = _.range(9)
+                        cols[COLOR_SOFT_WHITE] = sc.s
+                        cols[COLOR_COLD_WHITE] = sc.c
+
+                        # our service provides a debounced version of SetMultiple
+                        self.service.SetMultiple(_.range(9), cols, 0)
+                }
+            )
+
+            self.bridge.controller.on("B4KT:WHITE:" + self.id, self.onTarget)
+
+        return c
+
+    def remove(self):
+
+        if _.isObject(self.vDev) and self.vDev.get("deviceType") == "switchRGBW":
+            for col in self.colors:
+                # self.cc.data[col].level.unbind(self.onLevelChange)
+                pass
+
+            self.bridge.controller.off("B4KT:WHITE:" + self.id, self.onTarget)
+
+            if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
+                self.reset_target.cancel()
+
+        Base.remove(self)
+
+
+class Brightness(Base, WhiteSupport):
+
+    def add_to_callback(self):
+
+        # check if switchMultilevel exists; if so, use this!
+        # c = Brightness.add_to_callback(self)
+        # if c is not None:
+        #     return c
+
+        self.name = "Brightness"
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_SOFT_WHITE = 0
+        COLOR_COLD_WHITE = 1
+
+        self.colors = [COLOR_SOFT_WHITE, COLOR_COLD_WHITE]
+
+        self.onTarget = def(target):
+            # out(self.name + "#" + self.id + " - onTarget: ", target)
+            if self.target is None:
+                self.target = self.sc2bc(self.sc)
+
+            for item in target:
+                self.target[item] = target[item]
+
+            # dispatch the target reset procedure
+            # self.reset_target()
+
+            # notify HK!
+            self.onLevelChange()
+
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            #for col in self.colors:
+                # self.cc.data[col].level.bind(self.onLevelChange)
+            #    pass
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.Brightness
+                , "int"
+                , {
+                    'get': def():
+                        if self.target is None:
+                            bc = self.sc2bc(self.sc)
+                        else:
+                            bc = self.target
+
+                        return bc.b
+
+                    , 'set': def(value):
+
+                        if self.target is None:
+                            self.target = self.sc2bc(self.sc)
+
+                        # in self.target we log the "ToBe" state
+                        self.target.b = value
+
+                        emit = {}
+                        emit["b"] = value
+                        self.bridge.controller.emit("B4KT:WHITE:" + self.id, emit)
+
+                        # we never reset the "ToBe" state
+                        # self.reset_target()
+
+                        sc = self.bc2sc(self.target)
+
+                        # out(self.name, self.colors, self.target, rgb)
+
+                        # set all 9 colors
+                        cols = _.range(9)
+                        cols[COLOR_SOFT_WHITE] = sc.s
+                        cols[COLOR_COLD_WHITE] = sc.c
+
+                        # our service provides a debounced version of SetMultiple
+                        self.service.SetMultiple(_.range(9), cols, 0)
+                }
+            )
+
+            self.bridge.controller.on("B4KT:WHITE:" + self.id, self.onTarget)
+
+        return c
+
+    def remove(self):
+
+        if _.isObject(self.vDev) and self.vDev.get("deviceType") == "switchRGBW":
+            # for col in self.colors:
+                # self.cc.data[col].level.unbind(self.onLevelChange)
+            #    pass
+
+            self.bridge.controller.off("B4KT:WHITE:" + self.id, self.onTarget)
+
+            if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
+                self.reset_target.cancel()
+
+        Base.remove(self)
+
+
+class On(Base, WhiteSupport):
+
+    def __init__(self, bridge4kt, id):
+        Base.__init__(self, bridge4kt, id)
+        WhiteSupport.__init__(self)
+        self.name = "On"
+        self.type = HomeKit.Characteristics.On
+        self.format = "bool"
+        self.bc = "b"
+
+    def add_to_callback(self):
+
+        # ToDo: Should we check if there's a switchBinary present ... to On/Off the bulb?
+
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_SOFT_WHITE = 0
+        COLOR_COLD_WHITE = 1
+        self.colors = [COLOR_SOFT_WHITE, COLOR_COLD_WHITE]
+
+        self.onTarget = def(target):
+            # out(self.name + "#" + self.id + " - onTarget: ", target)
+            if self.target is None:
+                self.target = self.sc2bc(self.sc)
+
+            for item in target:
+                self.target[item] = target[item]
+
+            # dispatch the target reset procedure
+            # self.reset_target()
+
+            # notify HK!
+            self.onLevelChange()
+
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            for col in self.colors:
+                # self.cc.data[col].level.bind(self.onLevelChange)
+                pass
+
+            # self.identify = def():
+            #     if _.isObject(self.cc):
+            #         cols = _.range(9)
+            #         status = [self.cc.]
+            #         if _.isObject()
+
+
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'get': def():
+                        if self.target is None:
+                            bc = self.sc2bc(self.sc)
+                            # out(hsv)
+                            return bc[self.bc] > 0
+                        else:
+                            return self.target[self.bc] > 0
+
+                    , 'set': def(value):
+
+                        if self.target is None:
+                            self.target = self.sc2bc(self.sc)
+
+                        # out(self.target)
+
+                        if value == 1 or value == True or value == "1":
+                            # if Brightness > 0 ... it's already "ON"
+                            if self.target[self.bc] > 0:
+                                return
+                            value = 100
+                        elif value == 0 or value == False or value == "0":
+                            # if Brightness == 0 ... it's already "OFF"
+                            if self.target[self.bc] == 0:
+                                return
+                            value = 0
+                        else:
+                            return
+
+                        self.target[self.bc] = value
+                        # out(self.target)
+
+                        emit = {}
+                        emit[self.bc] = value
+                        self.bridge.controller.emit("B4KT:WHITE:" + self.id, emit)
+
+                        sc = self.bc2sc(self.target)
+
+                        # out(self.name, self.colors, self.target, rgb)
+
+                        # set all 9 colors
+                        cols = _.range(9)
+                        cols[COLOR_SOFT_WHITE] = sc.s
+                        cols[COLOR_COLD_WHITE] = sc.c
+
+                        # our service provides a debounced version of SetMultiple
+                        self.service.SetMultiple(_.range(9), cols, 0)
+                }
+            )
+
+            self.bridge.controller.on("B4KT:WHITE:" + self.id, self.onTarget)
+
+        return c
+
+    def remove(self):
+
+        if _.isObject(self.vDev):
+            for col in self.colors:
+                # self.cc.data[col].level.unbind(self.onLevelChange)
+                pass
+
+            self.bridge.controller.off("B4KT:WHITE:" + self.id, self.onTarget)
+
+            if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
+                self.reset_target.cancel()
+
+        Base.remove(self)
+
+
+class Identify(Base, WhiteSupport):
+
+    def __init__(self, bridge4kt, id):
+        Base.__init__(self, bridge4kt, id)
+        self.name = "Identify"
+        self.type = HomeKit.Characteristics.Identify
+        self.format = "bool"
+        self.bc = "b"
+
+    def add_to_callback(self):
+
+        # out("Identify")
+
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_SOFT_WHITE = 0
+        COLOR_COLD_WHITE = 1
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'set': def(value):
+
+                        if value == 1 or value == True or value == "1":
+
+                            status = self.sc2bc(self.sc)
+                            original = status[self.bc]
+
+                            status[self.bc] = 100
+                            sc = self.bc2sc(status)
+
+                            # set all 9 colors
+                            cols = self.fill(9, 0)
+                            cols[COLOR_SOFT_WHITE] = sc.s
+                            cols[COLOR_COLD_WHITE] = sc.c
+
+                            self.cc.SetMultiple(_.range(9), cols, 0, _.delay(def():
+                                status[self.bc] = 0
+                                sc = self.bc2sc(status)
+
+                                # set all 9 colors
+                                cols = self.fill(9, 0)
+                                cols[COLOR_SOFT_WHITE] = sc.s
+                                cols[COLOR_COLD_WHITE] = sc.c
+
+                                self.cc.SetMultiple(_.range(9), cols, 0, _.delay(def():
+                                    status[self.bc] = original
+                                    sc = self.bc2sc(status)
+
+                                    # set all 9 colors
+                                    cols = self.fill(9, 0)
+                                    cols[COLOR_SOFT_WHITE] = sc.s
+                                    cols[COLOR_COLD_WHITE] = sc.c
+                                    self.cc.SetMultiple(_.range(9), cols, 0)
+                                , 1500))
+                            , 1500))
+                }
+            )
+
+        else:
+            self.vDev = -1
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'set': def(value):
+                        return False
+                }
+            )
+
+
+        return c
+
+
+    def remove(self):
+        Base.remove(self)

@@ -1,0 +1,82 @@
+from characteristics.base import Base, out, GetterSupport
+import devices
+
+class BatteryLevel(Base):
+
+    def add_to_callback(self):
+
+        self.name = "BatteryLevel"
+        self.vDev = -1   # skip marker
+        c = None
+
+        dev = devices.pDevice(self.id)
+        if dev?:
+            cc = dev.commandClass(0x80)  # Battery
+            if cc:
+                self.commandClass = cc
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.BatteryLevel
+                    , "uint8"
+                    , {
+                        'get':
+
+                            def():
+                                value = self.commandClass.data.last.value or 0
+                                if value > 100:
+                                    value = 100
+
+                                return value
+                    }
+                )
+
+                self.commandClass.data.last.bind(self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if self.commandClass:
+            self.commandClass.data.last.bind(None)
+
+        Base.remove(self)
+
+
+class ChargingState(GetterSupport):
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "Charging State"
+        self.type = HomeKit.Characteristics.ChargingState
+        self.format = "uint8"
+
+        # Any device out there that is chargeable?
+        self.value = 2    # Not Chargeable
+
+
+class StatusLowBattery(Base):
+
+    def add_to_callback(self):
+
+        self.name = "StatusLowBattery"
+        self.vDev = -1   # skip marker
+        # _this = self
+
+        self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x80] # Battery
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.StatusLowBattery
+            , "uint8"
+            , {
+                'get':
+
+                    def():
+                        value = 1   # Low Battery
+                        level = self.commandClass.data.last.value
+                        if level?:
+                            value = 1 if level < 15 else 0
+                        # console.log(self.name + ": " + value)
+                        return value
+            }
+        )
+
+        return c
+

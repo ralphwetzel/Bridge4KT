@@ -1,0 +1,284 @@
+from characteristics.base import Base, out
+
+
+class BinarySensorState(Base):
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                self.type
+                , "uint8"
+                , {
+                    'get': def():
+                        value = 0
+                        level = self.vDev.get("metrics:level")
+                        if level?:
+                            level = level.toString()
+                            value = self.level_to_status(level)
+                        # console.log(self.name + ": " + value)
+                        return value
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def level_to_status(self, level):
+        return 1 if level.toLowerCase() == "on" else 0
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+        Base.remove(self)
+
+
+class MultilevelSensorState(Base):
+
+    def __init__(self, bridge4kt, id):
+        Base.__init__(self, bridge4kt, id)
+        self.format = "float"
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'get': def():
+                        v = self.vDev.get("metrics:level")
+                        if not v?:
+                            v = 0.0
+                        return self.convert(v)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def convert(self, level):
+        # level = Math.round(level)
+        return level
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+        Base.remove(self)
+
+
+# ======================
+
+
+class CarbonDioxideDetected(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Carbon Dioxide Detected"
+        self.type = HomeKit.Characteristics.CarbonDioxideDetected
+        self.detectType = {"probeType": ["alarm_coo", "alarmSensor_coo"]}
+
+
+class CarbonMonoxideDetected(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Carbon Monoxide Detected"
+        self.type = HomeKit.Characteristics.CarbonMonoxideDetected
+        self.detectType = {"probeType": ["co", "alarm_co", "alarmSensor_co"]}
+
+
+class ContactSensorState(BinarySensorState):
+
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Contact Sensor State"
+        self.type = HomeKit.Characteristics.ContactSensorState
+        self.detectType = {"probeType": ["door-window", "alarm_door", "alarmSensor_door"] }
+
+    def level_to_status(self, level):
+        return 0 if level.toLowerCase() == 'on' else 1
+
+
+class CurrentRelativeHumidity(MultilevelSensorState):
+    def __init__(self, bridge4kt, id):
+        MultilevelSensorState.__init__(self, bridge4kt, id)
+        self.name = "Current Relative Humidity"
+        self.type = HomeKit.Characteristics.CurrentRelativeHumidity
+        self.detectType = { "probeType": "humidity" }
+
+
+class CurrentTemperature(MultilevelSensorState):
+    def __init__(self, bridge4kt, id):
+        MultilevelSensorState.__init__(self, bridge4kt, id)
+        self.name = "Current Temperature"
+        self.type = HomeKit.Characteristics.CurrentTemperature
+        self.detectType = { "probeType": ["temperature" , "thermostat_set_point"] }
+
+
+class LeakDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Leak Detected"
+        self.type = HomeKit.Characteristics.LeakDetected
+        self.detectType = { "probeType": ["flood", "alarm_flood", "alarmSensor_flood"] }
+
+
+class MotionDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Motion Detected"
+        self.type = HomeKit.Characteristics.MotionDetected
+        self.detectType = {"probeType": ["motion", "alarm_burglar", "alarmSensor_burglar", "general_purpose"]}
+
+
+class OccupancyDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Occupancy Detected"
+        self.type = HomeKit.Characteristics.OccupancyDetected
+        self.detectType = {"probeType": "motion"}
+
+
+class SmokeDetected(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Smoke Detected"
+        self.type = HomeKit.Characteristics.SmokeDetected
+        self.detectType = {"probeType": ["smoke", "alarm_smoke", "alarmSensor_smoke"] }
+
+
+class StatusActive(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Status Active"
+
+        c = None
+        self.detectType = { "probeType": ["alarm_system", "alarmSensor_system"] }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.StatusActive
+                , "bool"
+                , {
+                    'get': def():
+                        value = False
+                        level = self.vDev.get("metrics:level")
+                        if level?:
+                            level = level.toString()
+                            value = level.toLowerCase() == "off"    # if 'off', the system's working properly
+                        # console.log(self.name + ": " + value)
+                        return value
+                        # return False
+                }
+            )
+
+        else:
+
+            self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x71]  # Alarm
+            if self.check_alarm_supported(self.alarm.system, self.commandClass.data.typeMask.value):
+
+                self.vDev = -1
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.StatusActive
+                    , "bool"
+                    , {
+                        'get': def():
+                            value = True
+                            level = self.commandClass.data[self.alarm.system].status.type
+                            if level? and level == 255:     # alarm activated
+                                value = False
+                            # console.log(self.name + ": " + value)
+                            return value
+                            # return False
+                    }
+                )
+
+
+        return c
+
+
+class StatusFault(BinarySensorState):
+
+    def add_to_callback(self):
+
+        self.name = "Status Fault"
+        self.vDev = -1   # skip marker
+        # _this = self
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.StatusFault
+            , "uint8"
+            , {
+                'get':
+
+                    def():
+                        value = 0   # ok
+                        failed = self.zway.devices[self.id].data.isFailed
+                        if failed?:
+                            value = 1 if failed is True else 0
+                        # console.log(self.name + ": " + value)
+                        return value
+                        # return 1
+            }
+        )
+
+        return c
+
+
+class StatusTampered(BinarySensorState):
+    def __init__(self, bridge4kt, id):
+        BinarySensorState.__init__(self, bridge4kt, id)
+        self.name = "Status Tampered"
+        self.type = HomeKit.Characteristics.StatusTampered
+        self.detectType = {"probeType": ["tampered", "alarm_burglar", "alarmSensor_burglar"] }
+
+    def add_to_callback(self):
+
+        c = BinarySensorState.add_to_callback(self)
+
+        if c is None:
+
+            self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x71]  # Alarm
+            if self.check_alarm_supported(self.alarm.burglar, self.commandClass.data.typeMask.value):
+
+                self.vDev = -1
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.StatusTampered
+                    , "uint8"
+                    , {
+                        'get': def():
+                            value = 0
+                            level = self.commandClass.data[self.alarm.burglar].status.type
+                            if level? and level == 255:     # alarm activated
+                                value = 1
+                            # console.log(self.name + ": " + value)
+                            return value
+                            # return 1
+                    }
+                )
+
+        return c

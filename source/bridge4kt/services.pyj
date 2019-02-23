@@ -10,7 +10,7 @@ class HKAccessory:
 class HKService:
     pass
 
-import characteristics
+from characteristics.create import create as characteristics_create
 import devices
 
 HomeKit.Services.BatteryService = "96"
@@ -40,16 +40,17 @@ class Base():
         self.name = ""
         self.definition = []
         self.characteristics = {}
+        self.identify = None
 
     def add_to(self, accessory: HKAccessory) -> HKService:
         pass
 
-    def generateUUID(self):
-        return 'xxxxxxxx-xxxx-xxxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, def(c):
-            r = Math.random()*16|0
-            v = r if c == 'x' else v'(r & 0x3|0x8)'
-            return v.toString(16)
-        )
+    # def generateUUID(self):
+    #     return 'xxxxxxxx-xxxx-xxxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, def(c):
+    #         r = Math.random()*16|0
+    #         v = r if c == 'x' else v'(r & 0x3|0x8)'
+    #         return v.toString(16)
+    #     )
 
     def update(self):
         for char in self.characteristics:
@@ -104,12 +105,26 @@ class Default(Base):
         self.service = s
 
         for char in self.definition:
-            c = characteristics.create(self.bridge, self.id, char)
+            c = characteristics_create(self.bridge, self.id, char)
             if c?:
                 self.characteristics[char] = c
                 c.add_to(self.service)
 
         # console.log(self.service.serialize.toString())
+
+    def replace_identify_of(self, service: HKService):
+
+        # out("replace_identify_of")
+        if self.identify is None:
+            return None
+
+        c = characteristics_create(self.bridge, self.id, self.identify)
+        if c?:
+            # out("Identify created for " + self.id)
+            self.characteristics[self.identify] = c
+            c.add_to(service)
+
+        return c
 
 
 class Sensor(Default):
@@ -144,18 +159,13 @@ class BatteryService(Default):
         self.definition = ['BatteryLevel', 'ChargingState', 'StatusLowBattery']
 
 
-class BridgingState(Base):
+class BridgingState(Default):
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
 
-    def add_to(self, accessory: HKAccessory) -> HKService:
-
-        s = accessory.addService(HomeKit.Services.BridgingState, "BridgingState")
-        console.log(". HK Service 'BridgingState' added")
-
-        s.addCharacteristic(HomeKit.Characteristics.Reachable, "bool", True, ["pr", "ev"])
-        s.addCharacteristic(HomeKit.Characteristics.LinkQuality, "uint8", 1, ["pr", "ev"], {"maxValue":4, "minValue":1, "minStep":1})
-        s.addCharacteristic(HomeKit.Characteristics.AccessoryIdentifier, "string", self.generateUUID())
-        s.addCharacteristic(HomeKit.Characteristics.Category, "uint16", 1, ["pr", "ev"], {"maxValue":16, "minValue":1, "minStep":1})
-        return s
+        self.serviceID = HomeKit.Services.BridgingState
+        self.name = "BridgingState"
+        self.definition = ['Reachable', 'LinkQuality', 'AccessoryIdentifier', 'Category']
 
 
 class CameraRTPStreamManagement(Base):
@@ -268,20 +278,42 @@ class Lightbulb(Default):
 
         self.serviceID = HomeKit.Services.Lightbulb
         self.name = "Lightbulb"
-        self.definition = ['On', 'Name',
-                           'Brightness2RGB', 'Hue', 'Saturation']
+        self.definition = ['OnRGB', 'Name',
+                           'BrightnessRGB', 'Hue', 'Saturation']
+        self.identify = "IdentifyRGB"
+
+    def add_to(self, accessory, primary):
+        Default.add_to(self, accessory, primary)
+
+        # HK sends hue & saturation in separated commands
+        # self.service.SetMultiple will become a debounced function enabling collection of this data prior execution!
+
+        cc = None
+        try:
+            # create pDev manager
+            pD = devices.pDevice(self.id)
+
+            # check if 'SwitchColor' supported
+            cc = pD.supportedCommandClass(0x33) # SwitchColor
+        except:
+            self.service.SetMultiple = def():
+                out(self.name + "#" + self.id + ": SetMultiple not implemented")
+
+        if cc is not None:
+            self.service.SetMultiple = _.debounce(_.bind(cc.SetMultiple, cc), 1000)
 
 
-# ColorTemperature is an alternative way to command Lightbulbs
-# TBC if supported by ZWay
-class LightbulbCT(Default):
+# For Lightbulbs operated as in white only mode
+class LightbulbWhite(Lightbulb):
     def __init__(self, bridge4kt, id):
-        Default.__init__(self, bridge4kt, id)
+        Lightbulb.__init__(self, bridge4kt, id)
 
         self.serviceID = HomeKit.Services.Lightbulb
         self.name = "Lightbulb"
-        self.definition = ['On', 'Name',
-                           'Brightness', 'ColorTemperature']
+        self.definition = ['OnWhite', 'Name',
+                           'BrightnessWhite', 'ColorTemperature']
+        self.identify = "IdentifyWhite"
+
 
 class LightSensor(Base):
     pass
@@ -483,6 +515,7 @@ def create(bridge4kt, realID, definition):
 
     known_services = {
         'BatteryService': BatteryService,
+        "BridgingState": BridgingState,
         'CarbonDioxideSensor': CarbonDioxideSensor,
         'CarbonMonoxideSensor': CarbonMonoxideSensor,
         'ContactSensor': ContactSensor,
@@ -497,7 +530,8 @@ def create(bridge4kt, realID, definition):
         'HumiditySensor': HumiditySensor,
         'LeakSensor': LeakSensor,
         'Lightbulb': Lightbulb,
-        # 'LightbulbCT': LightbulbCT,   <-- for the time being not supported!
+        'LightbulbWhite': LightbulbWhite,
+        # 'LightbulbCT': LightbulbCT,
         # 'LightSensor': LightSensor,
         'MotionSensor': MotionSensor,
         'OccupancySensor': OccupancySensor,
@@ -570,7 +604,7 @@ def check_sensor_capabilities(bridge4kt, pDev: devices.pDevice):
     }
 
     for sensor in sensors:
-        s = characteristics.create(bridge4kt, pDev.id, sensor)
+        s = characteristics_create(bridge4kt, pDev.id, sensor)
         if s?:
             d = devices.detect_vDev(bridge4kt.controller, pDev.id, s.detectType)
             if d?:

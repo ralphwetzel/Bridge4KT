@@ -5,7 +5,7 @@ import os
 header_text = """/*** Bridge4KT Z-Way HA module *******************************
  
  Author: Ralph Wetzel <bridge4kt@gmx.com>
- Version: 1.0.0
+ Version: 1.1
  Description:
    This module announces Z-Way HA devices to Apple HomeKit
  
@@ -51,6 +51,23 @@ print("Integrating file header...")
 with open("../index.js", 'wb') as f:
     f.write(header_text.encode())
     f.write(result)
+
+import time
+import datetime
+import json
+
+t = time.time()
+stamp = datetime.datetime.fromtimestamp(t).strftime('%Y%m%d|%H%M%S')
+print("Updating serial information to '{}'".format(stamp))
+
+with open("../module.json") as json_file:
+    data = json.load(json_file)
+
+data['serial'] = stamp
+data['tick'] = int(t * 1000)
+
+with open("../module.json", 'w') as outfile:
+    json.dump(data, outfile, indent=2)
 
 print("Done.")
 

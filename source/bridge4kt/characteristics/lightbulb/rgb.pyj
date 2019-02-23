@@ -1,0 +1,465 @@
+from characteristics.base import Base, out
+from characteristics.shared import Brightness, On
+import devices
+
+HomeKit.Characteristics.ColorTemperature = "CE"
+
+class RGBSupport(Base):
+
+    def fill(self, size, value):
+        return _.range(size).map(def():
+                return value
+            )
+
+    @property
+    def rgb(self):
+
+        COLOR_RED = 2
+        COLOR_GREEN = 3
+        COLOR_BLUE = 4
+
+        if _.isObject(self.cc):
+            r = self.cc.data[COLOR_RED].level.value
+            g = self.cc.data[COLOR_GREEN].level.value
+            b = self.cc.data[COLOR_BLUE].level.value
+        else:
+            r = 0
+            g = 0
+            b = 0
+
+        r = {"r": r, "g": g, "b": b}
+        # out(r)
+        return r
+
+
+    # https://stackoverflow.com/questions/17242144/javascript-convert-hsb-hsv-color-to-rgb-accurately
+    def hsv2rgb(self, hsv):
+
+        h = hsv.h / 360
+        s = hsv.s / 100
+        v = hsv.v / 100
+
+        # 0 <= h, s, v, <= 1
+
+        i = Math.floor(h * 6)
+        f = h * 6 - i
+        p = v * (1 - s)
+        q = v * (1 - f * s)
+        t = v * (1 - (1 - f) * s)
+
+        sector = i % 6
+
+        if sector == 0:
+            r = v
+            g = t
+            b = p
+        elif sector == 1:
+            r = q
+            g = v
+            b = p
+        elif sector == 2:
+            r = p
+            g = v
+            b = t
+        elif sector == 3:
+            r = p
+            g = q
+            b = v
+        elif sector == 4:
+            r = t
+            g = p
+            b = v
+        else:
+            r = v
+            g = p
+            b = q
+
+        return { "r": Math.round(255 * r),
+                 "g": Math.round(255 * g),
+                 "b": Math.round(255 * b) }
+
+    # https://stackoverflow.com/questions/17242144/javascript-convert-hsb-hsv-color-to-rgb-accurately
+    def rgb2hsv(self, rgb):
+
+        r = rgb.r
+        g = rgb.g
+        b = rgb.b
+
+        # 0 <= r, g, b <= 255
+
+        max = Math.max(r, g, b)
+        min = Math.min(r, g, b)
+        d = max - min
+        s = 0 if max == 0 else d / max
+        v = max / 255
+
+        if max == min:
+            h = 0
+        elif max == r:
+            f = 6 if g < b else 0
+            h = (g - b) + d * f
+            h /= 6 * d
+        elif max == g:
+            h = (b - r) + d * 2
+            h /= 6 * d
+        else:
+            h = (r - g) + d * 4
+            h /= 6 * d
+
+        return { "h": h * 360,
+                 "s": s * 100,
+                 "v": Math.round(v * 100) }
+
+    def add_to_callback(self):
+
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_RED = 2
+        COLOR_GREEN = 3
+        COLOR_BLUE = 4
+
+        self.colors = [COLOR_RED, COLOR_GREEN, COLOR_BLUE]
+
+        # self.target = None  # we cache the target value for some time to create a smooth user feedback @ HK
+        # self.reset_target = _.debounce(def():
+        #     for index, col in enumerate(self.colors):
+        #         if index == (len(self.colors) - 1):
+        #             try:
+        #                 self.cc.Get(col, def():
+        #                     self.target = None
+        #                 )
+        #             except:
+        #                 pass
+        #         else:
+        #             try:
+        #                 self.cc.Get(col)
+        #             except:
+        #                 pass
+        # , 2500)
+
+        self.onTarget = def(target):
+            # out(self.name + "#" + self.id + " - onTarget: ", target)
+            if self.target is None:
+                self.target = self.rgb2hsv(self.rgb)
+
+            for item in target:
+                self.target[item] = target[item]
+
+            # dispatch the target reset procedure
+            # self.reset_target()
+
+            # notify HK!
+            self.onLevelChange()
+
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            # for col in self.colors:
+                # self.cc.data[col].level.bind(self.onLevelChange)
+            #    pass
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'get': def():
+                        if self.target is None:
+                            hsv = self.rgb2hsv(self.rgb)
+                            # out(hsv)
+                            return hsv[self.hsv]
+                        else:
+                            return self.target[self.hsv]
+
+                    , 'set': def(value):
+
+                        if self.target is None:
+                            self.target = self.rgb2hsv(self.rgb)
+
+                        # in self.target we log the "ToBe" state
+                        self.target[self.hsv] = value
+
+                        emit = {}
+                        emit[self.hsv] = value
+                        self.bridge.controller.emit("B4KT:HSV:" + self.id, emit)
+
+                        # we never reset the "ToBe" state
+                        # self.reset_target()
+
+                        rgb = self.hsv2rgb(self.target)
+
+                        # out(self.name, self.colors, self.target, rgb)
+
+                        # set all 9 colors
+                        cols = self.fill(9, 0)
+                        cols[COLOR_RED] = rgb.r
+                        cols[COLOR_GREEN] = rgb.g
+                        cols[COLOR_BLUE] = rgb.b
+
+                        # our service provides a debounced version of SetMultiple
+                        self.service.SetMultiple(_.range(9), cols, 0)
+                }
+            )
+
+            self.bridge.controller.on("B4KT:HSV:" + self.id, self.onTarget)
+
+        return c
+
+    def remove(self):
+
+        if _.isObject(self.vDev):
+            #for col in self.colors:
+                # self.cc.data[col].level.unbind(self.onLevelChange)
+            #    pass
+
+            self.bridge.controller.off("B4KT:HSV:" + self.id, self.onTarget)
+
+            if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
+                self.reset_target.cancel()
+
+        Base.remove(self)
+
+
+class Brightness2RGB(RGBSupport):
+
+    def __init__(self, bridge4kt, id):
+        RGBSupport.__init__(self, bridge4kt, id)
+        self.name = "Brightness"
+        self.type = HomeKit.Characteristics.Brightness
+        self.format = "int"
+        self.hsv = "v"
+
+
+class Hue(RGBSupport):
+
+    def __init__(self, bridge4kt, id):
+        RGBSupport.__init__(self, bridge4kt, id)
+        self.name = "Hue"
+        self.type = HomeKit.Characteristics.Hue
+        self.format = "float"
+        self.hsv = "h"
+
+
+class OnRGB(RGBSupport):
+
+    def __init__(self, bridge4kt, id):
+        RGBSupport.__init__(self, bridge4kt, id)
+        self.name = "On"
+        self.type = HomeKit.Characteristics.On
+        self.format = "bool"
+        self.hsv = "v"
+
+    def add_to_callback(self):
+
+        # ToDo: Should we check if there's a switchBinary present ... to On/Off the bulb?
+        # ToDO: 20190223 / No. This makes color management even more complicated.
+
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_RED = 2
+        COLOR_GREEN = 3
+        COLOR_BLUE = 4
+
+        self.colors = [COLOR_RED, COLOR_GREEN, COLOR_BLUE]
+
+        self.onTarget = def(target):
+            # out(self.name + "#" + self.id + " - onTarget: ", target)
+            if self.target is None:
+                self.target = self.rgb2hsv(self.rgb)
+
+            for item in target:
+                self.target[item] = target[item]
+
+            # dispatch the target reset procedure
+            # self.reset_target()
+
+            # notify HK!
+            self.onLevelChange()
+
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            # for col in self.colors:
+                # self.cc.data[col].level.bind(self.onLevelChange)
+            #    pass
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'get': def():
+                        if self.target is None:
+                            hsv = self.rgb2hsv(self.rgb)
+                            # out(hsv)
+                            return hsv[self.hsv] > 0
+                        else:
+                            return self.target[self.hsv] > 0
+
+                    , 'set': def(value):
+
+                        if self.target is None:
+                            self.target = self.rgb2hsv(self.rgb)
+
+                        # out(self.target)
+
+                        if value == 1 or value == True or value == "1":
+                            # if Brightness > 0 ... it's already "ON"
+                            if self.target[self.hsv] > 0:
+                                return
+                            value = 100
+                        elif value == 0 or value == False or value == "0":
+                            # if Brightness == 0 ... it's already "OFF"
+                            if self.target[self.hsv] == 0:
+                                return
+                            value = 0
+                        else:
+                            return
+
+                        self.target[self.hsv] = value
+                        # out(self.target)
+
+                        emit = {}
+                        emit[self.hsv] = value
+                        self.bridge.controller.emit("B4KT:HSV:" + self.id, emit)
+
+                        rgb = self.hsv2rgb(self.target)
+
+                        # out(self.name, self.colors, self.target, rgb)
+
+                        # set all 9 colors
+                        cols = self.fill(9, 0)
+                        cols[COLOR_RED] = rgb.r
+                        cols[COLOR_GREEN] = rgb.g
+                        cols[COLOR_BLUE] = rgb.b
+
+                        # our service provides a debounced version of SetMultiple
+                        self.service.SetMultiple(_.range(9), cols, 0)
+                }
+            )
+
+            self.bridge.controller.on("B4KT:HSV:" + self.id, self.onTarget)
+
+        return c
+
+    def remove(self):
+
+        if _.isObject(self.vDev):
+            # for col in self.colors:
+                # self.cc.data[col].level.unbind(self.onLevelChange)
+            #    pass
+
+            self.bridge.controller.off("B4KT:HSV:" + self.id, self.onTarget)
+
+            if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
+                self.reset_target.cancel()
+
+        RGBSupport.remove(self)
+
+
+class Saturation(RGBSupport):
+
+    def __init__(self, bridge4kt, id):
+        RGBSupport.__init__(self, bridge4kt, id)
+        self.name = "Saturation"
+        self.type = HomeKit.Characteristics.Saturation
+        self.format = "float"
+        self.hsv = "s"
+
+
+class Identify(RGBSupport):
+
+    def __init__(self, bridge4kt, id):
+        RGBSupport.__init__(self, bridge4kt, id)
+        self.name = "Identify"
+        self.type = HomeKit.Characteristics.Identify
+        self.format = "bool"
+        self.hsv = "v"
+
+    def add_to_callback(self):
+
+        # out("Identify")
+
+        c = None
+        self.detectType = { "deviceType": "switchRGBW" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        COLOR_RED = 2
+        COLOR_GREEN = 3
+        COLOR_BLUE = 4
+
+        if d?:
+            self.vDev = d
+            dev = devices.create(self.vDev)
+            self.cc = dev.commandClass
+
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'set': def(value):
+
+                        if value == 1 or value == True or value == "1":
+
+                            status = self.rgb2hsv(self.rgb)
+                            original = status[self.hsv]
+
+                            status[self.hsv] = 100
+                            rgb = self.hsv2rgb(status)
+
+                            # set all 9 colors
+                            cols = self.fill(9, 0)
+                            cols[COLOR_RED] = rgb.r
+                            cols[COLOR_GREEN] = rgb.g
+                            cols[COLOR_BLUE] = rgb.b
+
+                            self.cc.SetMultiple(_.range(9), cols, 0, _.delay(def():
+                                status[self.hsv] = 0
+                                rgb = self.hsv2rgb(status)
+
+                                # set all 9 colors
+                                cols = self.fill(9, 0)
+                                cols[COLOR_RED] = rgb.r
+                                cols[COLOR_GREEN] = rgb.g
+                                cols[COLOR_BLUE] = rgb.b
+
+                                self.cc.SetMultiple(_.range(9), cols, 0, _.delay(def():
+                                    status[self.hsv] = original
+                                    rgb = self.hsv2rgb(status)
+
+                                    # set all 9 colors
+                                    cols = self.fill(9, 0)
+                                    cols[COLOR_RED] = rgb.r
+                                    cols[COLOR_GREEN] = rgb.g
+                                    cols[COLOR_BLUE] = rgb.b
+                                    self.cc.SetMultiple(_.range(9), cols, 0)
+                                , 1500))
+                            , 1500))
+                }
+            )
+
+        else:
+            self.vDev = -1
+            c = self.service.addCharacteristic(
+                self.type
+                , self.format
+                , {
+                    'set': def(value):
+                        return False
+                }
+            )
+
+
+        return c
+
+
+    def remove(self):
+        Base.remove(self)

@@ -1,0 +1,14 @@
+from characteristics.base import Base, out, GetterSupport
+
+
+class OutletInUse(GetterSupport):
+
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "Outlet In Use"
+        self.type = HomeKit.Characteristics.OutletInUse
+        self.format = "bool"
+
+        # This characteristic should tell if there's 'somethin' plugged into the outlet
+        # As there're no way to 'detect' this via z-way, this therefore is just a Dummy implementation
+        self.value = True

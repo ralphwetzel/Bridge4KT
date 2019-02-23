@@ -78,15 +78,15 @@ class Main(Base):
         Base.__init__(self, bridge4kt, id)
 
         self.config = {
-            "name": "Bridge4KT",
-            "manufacturer": "Ralph Wetzel",
-            "model": "1.0",
-            "serial": "Not provided"
+            "name": bridge4kt.meta.moduleName,
+            "manufacturer": bridge4kt.meta.author,
+            "model": bridge4kt.meta.version,
+            "serial": bridge4kt.meta.serial
         }
 
     def add_to(self, collection: HKAccessoryCollection):
 
-        self.name = "Main"
+        self.name = "Bridge4KT"
         ac = Base.add_to(self, collection)
 
         s = ac.addService("49FB9D4D-0FEA-4BF1-8FA6-E7B18AB86DCE", "Bridge4KT")
@@ -171,6 +171,10 @@ class Creator(Base):
 
     def add_to(self, collection: HKAccessoryCollection):
 
+        # some constants
+        HSAccessoryInformation = HomeKit.stPre + HomeKit.Services.AccessoryInformation + HomeKit.stPost
+        HCIdentify = HomeKit.stPre + HomeKit.Characteristics.Identify + HomeKit.stPost
+
         # Primary Service shall be equal to Accessory Category
         is_primary = False
         s = self.definition[0]
@@ -203,7 +207,13 @@ class Creator(Base):
 
         index = 0
 
-        for index, service in enumerate(self.definition):
+        # add Bridging State Service to all Accessories
+        definition = self.definition.slice()
+        # .append creates an error here!
+        definition.push("BridgingState")
+        # out(definition)
+
+        for index, service in enumerate(definition):
 
             if service == "StatelessProgrammableSwitch":
                 detectType = {"deviceType": "sensorDiscrete"}
@@ -265,9 +275,23 @@ class Creator(Base):
                     self.services[service] = s
                     s.add_to(ac, index == 0 and is_primary is True)
 
-        # add Bridging State Service to all Accessories
-        bs = services.BridgingState()
-        bs.add_to(ac)
+                    # If the primary service offers an identification routine...
+                    if index == 0 and is_primary is True:
+                        # out("Adding Identify...")
+                        # find the service "AccessoryInformation" (that was already created)
+                        for service in ac.services:
+                            # out(service.type)
+                            if service.type == HSAccessoryInformation:
+                                # find Characteristic "Identify"
+                                for char in service.characteristics:
+                                    # out(char.type)
+                                    if char.type == HCIdentify:
+                                        # Replace the standard implementation...
+                                        # ... with a dedicated one to provide an Identification Routine for the service
+                                        if s.replace_identify_of(service) is not None:
+                                            char.remove()
+                                        break
+                                break
 
         return ac
 

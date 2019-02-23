@@ -93,6 +93,11 @@ class Bridge4KT(AutomationModule):
                         pos = skip.indexOf(t[0])
                         if pos == -1:
                             skip.push(t[0])
+                    elif t[0].toLowerCase() == 'lightbulb' and t[1].toLowerCase() == 'white':
+                        pos = skip.indexOf(t[0])
+                        if pos == -1:
+                            skip.push(t[0])
+                        secondary.push('LightbulbWhite')
 
         # appy the skip list
         if len(skip) > 0:
@@ -207,7 +212,7 @@ class Bridge4KT(AutomationModule):
             if not pDev.accessory?:
 
                 # if we know it - let's create the accessories
-                if definition?:
+                if definition is not None and len(definition) > 0 and definition[0] is not None:
                     a = accessories.create(self, pDev.id, definition)
                     if a?:
                         config.definition = definition
@@ -248,7 +253,10 @@ class Bridge4KT(AutomationModule):
             c += cc + " >> "
 
             c += pDev.config.id if pDev.config.id? else "Unknown Device"
-            c += ": " + pDev.config.definition.join(", ") if pDev.config.id? else ""
+            if pDev.config.definition is None:
+                c += ": Device not bridged"
+            else:
+                c += ": " + pDev.config.definition.join(", ") if pDev.config.id? else ""
 
             if len(config_text) > 0:
                 config_text += "\n"
@@ -271,11 +279,43 @@ class Bridge4KT(AutomationModule):
             return parseJSON(s)
 
         def downloadJSON(file):
-            response = http.request({
+
+            if not self.meta.tick?:
+                return None
+
+            check = new Date(self.meta.tick)
+
+            r = {
+                "url": "https://api.github.com/repos/ralphwetzel/Bridge4KT/commits?path=" + file + "&page=1&per_page=1",
+                "method": "GET",
+                "timeout": 500
+            }
+
+            response = http.request(r)
+            if not _.isObject(response):
+                return None
+
+            if response.status != 200:
+                return None
+
+            try:
+                j = parseJSON(response.data)
+                out(j[0].commit.committer.date)
+                d = new Date(j[0].commit.committer.date)
+            except:
+                return None
+
+            # local data is more recent than data on GitHub
+            if check > d:
+                return None
+
+            r = {
                 "url": "https://raw.githubusercontent.com/ralphwetzel/Bridge4KT/master/" + file,
                 "method": "GET",
                 "timeout": 5000,
-            })
+            }
+
+            response = http.request(r)
             assert(_.isObject(response))
             if response.status == 200:
                 assert(out("Bridge4KT: '" + file + "' updated from GitHub!"))
@@ -312,7 +352,7 @@ class Bridge4KT(AutomationModule):
 
             if r.method == "GET" and r.path == "/accessories":
                 s = this.accessories.serialize(r)
-                # assert(out(s))
+                assert(out(s))
                 return s
 
             elif r.method == "PUT" and r.path == "/characteristics" and r.data and r.data.characteristics:

@@ -1,0 +1,110 @@
+from characteristics.base import Base, out, GetterSupport
+
+HomeKit.Services.ServiceLabel = "CC"
+HomeKit.Characteristics.ServiceLabelIndex = "CB"
+HomeKit.Characteristics.ServiceLabelNamespace = "CD"
+
+class ProgrammableSwitchEvent(Base):
+
+    # self.responsible will be set by the service
+
+    def add_to_callback(self):
+
+        self.status = None
+
+        self.onTrigger = def(vDev):
+            level = vDev.get("metrics:level")
+            states = vDev.get("metrics:discreteStates")
+            if level? and states?:
+                check = level.slice(0,-1)
+                if check == self.responsible:
+                    status = states[level]
+
+                    # "11": {
+                    #     "cnt": "1",
+                    #     "action": "release",      # press, release, hold
+                    #     "type": "B"
+                    # },
+
+                    if status.action == "press":
+                        cnt = parseInt(status.cnt)
+                        if cnt == 1:
+                            self.status = 0     # Single
+                        elif cnt == 2:
+                            self.status = 1     # Double
+                        else:
+                            self.status = None  # Not supported!!
+
+                    elif status.action == "hold":
+                        self.status = 2     # Long
+
+                    else:
+                        self.status = None
+
+                    if self.status is not None:
+                        self.onLevelChange()
+
+                    # out(self.name + '.' + self.responsible + ':', self.status)
+                    return
+
+            self.status = None
+            # out(self.name + '.' + self.responsible + ':', self.status)
+
+
+        self.name = "Programmable Switch Event"
+
+        c = None
+        self.detectType = {"deviceType": "sensorDiscrete"}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.ProgrammableSwitchEvent
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.status
+                }
+            )
+
+            if c?:
+                # this suppresses the forwarding of the pr (get) value to a client
+                # Handling @ __init__.pyj
+                # c.always_null_pr = True
+                pass
+
+            self.vDev.on("change:metrics:level", self.onTrigger)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onTrigger)
+        Base.remove(self)
+
+class ServiceLabelIndex(Base):
+    def add_to_callback(self):
+        self.vDev = -1
+        self.name = "ServiceLabelIndex"
+
+        c =  self.service.addCharacteristic(
+            HomeKit.Characteristics.ServiceLabelIndex
+            , "uint8"
+            , {
+                'get': def():
+                    return self.ServiceLabelIndex
+            }
+        )
+        return c
+
+
+class ServiceLabelNamespace(GetterSupport):
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "ServiceLabel Namespace"
+        self.type = HomeKit.Characteristics.ServiceLabelNamespace
+        self.format = "uint8"
+
+        self.value = 1 # Numbers

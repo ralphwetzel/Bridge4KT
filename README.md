@@ -35,7 +35,7 @@ This latest version is able to bridge to the following accessories:
 - Lightbulb
 - Outlet
 - Programmable Switch
-- Sensor
+- [Sensor](#sensors)
 - Switch
 - Thermostat
 - Window
@@ -47,6 +47,8 @@ There are yet a number of capabilities being present with a Z-Wave device that a
 
 ## Installation
 *Bridge4KT* is distributed via the *Z-Way* app store, in the category **Ext. UIs**. After installation, you'll find it in the apps directory of your *Z-Way* application.
+
+If you're interested in experiencing the latest development version of *Bridge4KT* - which might be in a pre-release status - you should add the token `B4KT` to your list of Z-Way app store tokens.
 
 Alteratively you could download this repository and drop it's contents under `z-way-server/automation/userModules` in a directory named `Bridge4KT`.
 
@@ -89,19 +91,28 @@ The following tags may be applied to **any virtual device belonging to the physi
 
 | Tag Definition|Example|Use Case|
 |:----|:---|:---|
-|B4KT:*Capability*|`B4KT:TemperatureSensor`| To add the capability *TemperaturSensor* to a device|
-|B4KT:*Capability*:Primary|`B4KT:TemperatureSensor:Primary`| To add the capability *TemperaturSensor* as the primary capability of a device|
-|B4KT:*Capability*:Skip|`B4KT:TemperatureSensor:Skip`| To remove the capability *TemperaturSensor* (most probably pre-defined via the device database) from the list of capabilities of a device|
+|B4KT:*Capability*|`B4KT:TemperatureSensor`| To **add** the capability *TemperaturSensor* to a device.|
+|B4KT:*Capability*:Primary|`B4KT:TemperatureSensor:Primary`| To **add** the capability *TemperaturSensor* as the primary capability of a device.|
+|B4KT:*Capability*:Skip|`B4KT:TemperatureSensor:Skip`| To **remove** the capability *TemperaturSensor* (most probably pre-defined via the device database) from the list of capabilities of a device.|
+|`B4KT:Lightbulb:White`|| To operate a [lightbulb](#lightbulb) as *white color only* device.|
+
+> Please be adviced, that you have to apply both an **add** tag definition and a **remove** tag definition to switch the capability of a device.
+>
+> An example: To operate a device, detected by default  as *Smoke Sensor*, as *Temperature Sensor* only, you have to define
+>
+> `B4KT:TemperatureSensor` `B4KT:SmokeSensor:Skip`
+>
+> The sequence of definition is of no relevance for the resulting operation - yet if impose a capability that the device is not capable to handle, it will not be bridged at all.
 
 The following tags have to be applied to **the virtual device that shall be used** for the dedicated capability.
 
 | Tag Definition|Use Case|
 |:----|:---|
-|`B4KT:Slat:Horizontal`| To define that this virtual device is used to operate a horizontal slat|
-|`B4KT:Slat:Vertical`| To define that this virtual device is used to operate a vertical slat|
-|`B4KT:Slat:Minus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to -90°|
-|`B4KT:Slat:Plus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to +90°|
-|`B4KT:Slat:Swing`| To define that the slat operated by this vertical device is a *swinging* slat|
+|`B4KT:Slat:Horizontal`| To define that this virtual device is used to operate a horizontal slat.|
+|`B4KT:Slat:Vertical`| To define that this virtual device is used to operate a vertical slat.|
+|`B4KT:Slat:Minus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to -90°.|
+|`B4KT:Slat:Plus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to +90°.|
+|`B4KT:Slat:Swing`| To define that the slat operated by this vertical device is a *swinging* slat.|
 
 
 ## Additional Information
@@ -110,14 +121,24 @@ This section tries to provide some additional information that might be suitable
 ### Battery Devices
 To forward the battery status of battery driven devices, you may add *BatteryService* as additional capability tag to your devices definition: `B4KT:BatteryService`
 
+### Bulb
+Refer to [Lightbulb](#lightbulb).
+
 ### Door
-Refer to [Motor Control Device](#motor-control-device)
+Refer to [Motor Control Device](#motor-control-device).
 
 ### Garage
-Refer to [Motor Control Device](#motor-control-device)
+Refer to [Motor Control Device](#motor-control-device).
 
 ### HomeKit Configuration Code
-Refer to [Device Detection Process](#device-detection-process)
+Refer to [Device Detection Process](#device-detection-process).
+
+### Lightbulb
+Lightbulbs are - per default - operated via their color related properties, e.g. their RGB values. If you intend to operate it as a "white color only" device, define the tag `B4KT:Lightbulb:White`.
+
+Lightbulbs support the HomeBridge identification protocol applied during the device inclusion process. Pressing the button "Identify Device" (Gerät identifizieren) will flash the bulb.
+
+<p  align="center"><img src='documentation/identify.jpeg' width='25%'></p>
 
 ### Motor Control Device
 Z-Way *Motor Control Devices* (MCDs) can be bridged to a number of different capabilities. The Apple HomeKit protocol differentiates between `Door`, `Garage`, `Window` and `WindowCovering`.
@@ -140,10 +161,18 @@ MCD(A) devices are - out of the box - neither aware of the endpoints nor positio
 #### Simple Window Covering
 Devices advertising the type *Simple Window Covering* are as well supported by *Bridge4KT*.
 
+### Naming Conventions
+By default, *Bridge4KT* takes the name given to the physical device in Z-Way as HomeKit identifier.
+
+If this is a composed identifier, beginning with a term that equals the name of the room this device is associated to in HomeKit, then HomeKit will strip this portion of the identifier to create a nice label.
+
+### RGBW Bulb
+Refer to [Lightbulb](#lightbulb).
+
 ### Roller Shutter
 Most devices suitable to operate a motor are advertised and sold as *Roller Shutter* as this is one of the most obvious use cases. In the end, they are capable to support a number of different activities, like opening / closing a garage or a motorized door.
 
-Refer to [Motor Control Device](#motor-control-device)
+Refer to [Motor Control Device](#motor-control-device).
 
 ### Sensors
 The following sensor types are supported:
@@ -158,10 +187,10 @@ The following sensor types are supported:
 If you operate a sensor supporting multiple types, you may add those as a capability by adding a dedicated tag, e.g. `B4KT:TemperaturSensor`.
 
 ### Window
-Refer to [Motor Control Device](#motor-control-device)
+Refer to [Motor Control Device](#motor-control-device).
 
 ### WindowCovering
-Refer to [Motor Control Device](#motor-control-device)
+Refer to [Motor Control Device](#motor-control-device).
 
 ## RapydScript
 *Bridge4KT* is written using [RapydScript NG](https://github.com/kovidgoyal/rapydscript-ng) , a "transpiler for a Python like language to JavaScript".

@@ -1,0 +1,947 @@
+from characteristics.base import Base, out
+import devices
+
+class SlatSupport(Base):
+
+    def __init__(self, bridge4kt, id):
+
+        self.rangeMax = None
+        self.rangeMin = None
+
+        Base.__init__(self, bridge4kt, id)
+
+    # ZWay: 0 ... 99
+    # HK: -90° ... +90° == 180
+
+    # tag "B4KT:Slat:Minus90" limits HK values to -90° ... 0°
+    # tag "B4KT:Slat:Plus90" limits HK values to 0° ... 90°
+    # No tag => 180°
+
+    def map_zway_to_hk(self, value):
+
+        if self.vDev is None:
+            return Math.round((180 / 99) * value - 90)
+
+        if (self.rangeMax is None) or (self.rangeMin is None):
+            t = self.vDev.get("tags")
+            if t?:
+                if "B4KT:Slat:Minus90" in t:
+                    self.rangeMin = -90
+                    self.rangeMax = 0
+                elif "B4KT:Slat:Plus90" in t:
+                    self.rangeMin = 0
+                    self.rangeMax = 90
+                else:
+                    self.rangeMin = -90
+                    self.rangeMax = 90
+
+        range = self.rangeMax - self.rangeMin
+
+        return Math.round((range / 99) * value + self.rangeMin)
+
+
+    def map_hk_to_zway(self, position):
+
+        if self.vDev is None:
+            return Math.round((position + 90) * (99 / 180))
+
+        if (self.rangeMax is None) or (self.rangeMin is None):
+            t = self.vDev.get("tags")
+            if t?:
+                if "B4KT:Slat:Minus90" in t:
+                    self.rangeMin = -90
+                    self.rangeMax = 0
+                elif "B4KT:Slat:Plus90" in t:
+                    self.rangeMin = 0
+                    self.rangeMax = 90
+                else:
+                    self.rangeMin = -90
+                    self.rangeMax = 90
+
+        position = Math.min(self.rangeMax, position)
+        position = Math.max(self.rangeMin, position)
+
+        range = self.rangeMax - self.rangeMin
+
+        return Math.round((position - self.rangeMin) * (99 / range))
+
+
+class CurrentPositionB(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position B"
+
+        c = None
+        self.vDev = None
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+
+            if _.isObject(self.vDev):
+
+                # A Class B device, if not calibrated, knows exactly 3 states:
+                # 0x00 & 0x63/0xFF for the end points, 0xFE for 'in between'
+                # If calibrated, accurate position values will be returned
+
+                current = self.vDev.get("metrics:level")
+            else:
+                current = 50    # in between
+
+            if status == 0 or status == 1:
+                self.position = current
+            elif status == 2:   # stopped at determinable position
+                if _.isObject(self.vDev):
+                    self.position = current
+                else:
+                    if self.latest_status == 0:
+                        self.position = 0x00
+                    elif self.latest_status == 1:
+                        self.position = 0xFF
+            elif status == 3:   # stopped somewhere in between
+                self.position = current  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.onPosition = def():
+            self.position = self.vDev.get("metrics:level")
+            # out("CP: " + self.position)
+            if self.position == 0xFE:
+                self.position = 50  # in between
+            self.onLevelChange()
+
+        self.detectType = { "probeType": "motor" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d is not None:
+            self.vDev = d
+            self.position = self.vDev.get("metrics:level")
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.position)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        # self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+        return c
+
+    def remove(self):
+        # self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class CurrentPositionC(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position C"
+
+        c = None
+        self.vDev = None
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+            if _.isObject(self.vDev):
+                self.position = self.vDev.get("metrics:level")
+            else:   # Fallback
+                if status == 0 or status == 1:
+                    self.position = 50  # in between
+                elif status == 2:   # stopped at determinable position
+                    if self.latest_status == 0:
+                        self.position = 0x00
+                    elif self.latest_status == 1:
+                        self.position = 0xFF
+                elif status == 3:   # stopped somewhere in between
+                    self.position = 50  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.onPosition = def():
+            self.position = self.vDev.get("metrics:level")
+            self.onLevelChange()
+
+        self.detectType = { "probeType": "motor" }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.position)
+                }
+            )
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class CurrentPositionSimple(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Current Position Simple"
+
+        c = None
+        self.vDev = -1
+
+        self.latest_status = 2 # Stopped
+        self.position = 0x00
+
+        self.onStatus = def(status):
+            if status == 0 or status == 1:
+                self.position = 50  # in between
+            elif status == 2:   # stopped at determinable position
+                if self.latest_status == 0:
+                    self.position = 0x00
+                elif self.latest_status == 1:
+                    self.position = 0xFF
+            elif status == 3:   # stopped somewhere in between
+                self.position = 50  # in between
+
+            self.latest_status = status
+            self.onLevelChange()
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.CurrentPosition
+            , "uint8"
+            , {
+                'get': def():
+                    return self.map_zway_to_hk(self.position)
+            }
+        )
+
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        Base.remove(self)
+
+
+class CurrentSlatState(Base):
+
+    # This is quite a generic implementation
+    # Anyone out there with a use case?
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Current Slat State"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentSlatState
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Swing"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 2 if check in t else 0
+                            else:
+                                return 2 if t == check else 0
+
+                        return 0    # Default == Fixed
+                }
+            )
+
+        return c
+
+class CurrentTiltAngle(SlatSupport):
+
+    def __init__(self, bridge4kt, id):
+
+        # self.name = "Target Horizontal Tilt Angle"
+        # self.detectType = {"tags": "B4KT:Slat:Horizontal" }
+
+        SlatSupport.__init__(self, bridge4kt, id)
+        self.name = "Current Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentTiltAngle
+        self.detectType = {"deviceType": "switchMultilevel"}
+
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            pT = d.get("deviceType")        # this is to doublecheck in case we detect the device just by its tag
+            if pT == "switchMultilevel":
+                self.vDev = d
+                c = self.service.addCharacteristic(
+                    self.type
+                    , "int"
+                    , {
+                        'get': def():
+                            return self.map_zway_to_hk(self.vDev.get("metrics:level"))
+                    }
+                )
+
+                self.vDev.on("change:metrics:level", self.onLevelChange)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onLevelChange)
+
+
+class CurrentHorizontalTiltAngle(CurrentTiltAngle):
+    def __init__(self, bridge4kt, id):
+        CurrentTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Current Horizontal Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentHorizontalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Horizontal"}
+
+
+class CurrentVerticalTiltAngle(CurrentTiltAngle):
+    def __init__(self, bridge4kt, id):
+        CurrentTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Current Vertical Tilt Angle"
+        self.type = HomeKit.Characteristics.CurrentVerticalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Vertical"}
+
+class HoldPosition(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Hold Position"
+
+        c = None
+        self.vDev = -1
+
+        self.commandClass = self.zway.devices[self.id].instances[0].commandClasses[0x26]  # SwitchMultilevel
+        if self.commandClass.StopLevelChange?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.HoldPosition
+                , "bool"
+                , {
+                    'set': def(value):
+                        value = 1 if value == True else 0
+                        if value == 1:
+                            out("HoldPosition")
+                            self.commandClass.StopLevelChange()
+                }
+            )
+
+        return c
+
+
+class PositionState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Position State"
+
+        c = None
+        self.vDev = -1
+        self.status = 2 # Stopped
+
+        self.onStatus = def(status):
+            if status > 2:
+                status = 2
+            self.status = status
+            self.onLevelChange()
+
+        self.bridge.controller.on("B4KT:PositionState:" + self.id, self.onStatus)
+
+        c = self.service.addCharacteristic(
+            HomeKit.Characteristics.PositionState
+            , "uint8"
+            , {
+                'get': def():
+                    return self.status
+            }
+        )
+
+        return c
+
+    def remove(self):
+        self.bridge.controller.off("B4KT:PositionState:" + self.id, self.onStatus)
+        Base.remove(self)
+
+
+class SlatType(Base):
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Slat Type"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.SlatType
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Vertical"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 1 if check in t else 0
+                            else:
+                                return 1 if t == check else 0
+
+                        return 0    # Default == Horizontal
+                }
+            )
+
+        return c
+
+
+class SwingMode(Base):
+
+    # This is quite a generic implementation
+    # Anyone out there with a use case?
+
+    def add_to_callback(self):
+
+        c = None
+        self.name = "Swing Mode"
+        self.detectType = {"tags": ["B4KT:Slat:Horizontal", "B4KT:Slat:Vertical"]}
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentSlatState
+                , "uint8"
+                , {
+                    'get': def():
+                        check = "B4KT:Slat:Swing"
+                        t = self.vDev.get("tags")
+                        if t?:
+                            if _.isArray(t):
+                                return 1 if check in t else 0
+                            else:
+                                return 1 if t == check else 0
+
+                        return 0    # Default == Not Swinging
+                }
+            )
+
+        return c
+
+
+# According to the Z-Wave Plus v2 Device Type Specification, the following classes have to be distinguished
+# Class A: no position/endpoint awareness
+# Class B: endpoint aware
+# Class C: position & endpoint aware
+# Only Class C is able to handle 'exact' position requests.
+# Thus Class A & B demand special code for great user experience!
+# Additionally, we provide a 'SIMPLE' implementation for SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING devices
+
+class TargetPositionA(Base):
+
+    # Class A devices are neither position nor endpoint aware
+    # Thus the only reasonable command set is StartLevelChange / StopLevelChange
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            self.vDev = d
+            self.target = 0 # up
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        t = 0xFF if self.target == 0 else 0x00
+                        return self.map_zway_to_hk(t)
+
+                    , 'set': def(value):
+
+                        d = devices.create(self.vDev)
+                        if d?:
+
+                            # acc. Z-Wave Plus v2 Device Type Specification:
+                            # 0x00 == StopLevelChange
+                            # 0xFF (100) == Up or Down
+                            if value == 0 or value == 100:
+                                if value == 0:
+                                    d.commandClass.StopLevelChange(def():
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    )
+                                else:
+                                    self.target = 0 if self.target == 1 else 1
+                                    d.commandClass.StartLevelChange(self.target, def():
+                                        # HK Directions (0: down, 1: up) != Z-Way directions (0: up, 1: down)
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, self.target ^ 1)
+                                    )
+                                return
+
+                            # HK Directions (0: down, 1: up) != Z-Way directions (0: up, 1: down)
+                            if value >= 50:
+                                self.target = 0  # up
+                                d.commandClass.StartLevelChange(0, def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 1)
+                                )
+                            elif value < 50:
+                                self.target = 1  # down
+                                d.commandClass.StartLevelChange(1, def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 0)
+                                )
+
+                            # Trigger to send 'Stopped' status after 20s
+                            setTimeout(def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                , 20
+                            )
+                }
+            )
+
+        return c
+
+class TargetPositionB(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d is not None:
+            self.vDev = d
+            self.target = None
+            self.display = self.vDev.get("metrics:level")
+            self.trigger = None
+
+            self.set_level = _.debounce(def(target):
+                dev = devices.create(self.vDev)
+                if dev?:
+                    dev.commandClass.StopLevelChange(def():
+                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                        dev.commandClass.Get(def():
+                            current = dev.commandClass.data.level.value
+                            dev.commandClass.Set(target, 0xff, def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                            0 if current > target else 1)
+                            )
+                        )
+                    )
+            , 500)
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.map_zway_to_hk(self.display)
+
+                , 'set': def(value):
+
+                    current = self.vDev.get("metrics:level")
+
+                    if 0 < value < 100:
+                        self.target = self.display = self.map_hk_to_zway(value)
+                        self.set_level(self.target)
+
+                    # => if value == 0 or value == 100
+                    if self.trigger is None:
+                        self.display = self.map_hk_to_zway(value)
+                        self.trigger = _.delay(def():
+                            self.trigger = None
+                            self.target = self.display
+                            dev = devices.create(self.vDev)
+                            if dev?:
+                                dev.commandClass.StopLevelChange(def():
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    dev.commandClass.Get(def():
+                                        current = self.vDev.get("metrics:level")
+                                        dev.commandClass.Set(self.target, 0xff, def():
+                                            self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                        0 if current > self.target else 1)
+                                        )
+                                    )
+                                )
+                        , 500)
+
+                    else:
+
+                        clearTimeout(self.trigger)
+                        self.trigger = None
+                        dev = devices.create(self.vDev)
+                        if dev?:
+                            dev.commandClass.StopLevelChange(def():
+                                self.target = None
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                dev.commandClass.Get(def():
+                                    self.display = self.vDev.get("metrics:level")
+                                )
+                            )
+
+                    return
+
+                }
+            )
+
+            self.onPosition = def():
+                current = self.vDev.get("metrics:level")
+                # out("Pos: " + current)
+                if self.target == None:
+                    self.display = current
+                elif self.target == current:
+                    self.target = None
+                    self.display = current
+                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+
+                self.onLevelChange()
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+
+
+class TargetPositionC(Base):
+
+    # CLASS C devices are endpoint & position aware!
+
+    def add_to_callback(self):
+        self.name = "Target Position"
+        c = None
+
+        self.detectType = {"deviceType": "switchMultilevel" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            self.vDev = d
+            self.target = None
+            self.display = self.vDev.get("metrics:level")
+            self.trigger = None
+
+            self.set_level = _.debounce(def(target):
+                dev = devices.create(self.vDev)
+                if dev?:
+                    dev.commandClass.StopLevelChange(def():
+                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                        dev.commandClass.Get(def():
+                            current = dev.commandClass.data.level.value
+                            dev.commandClass.Set(target, 0xff, def():
+                                self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                            0 if current > target else 1)
+                            )
+                        )
+                    )
+            , 1000)
+
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetPosition
+                , "uint8"
+                , {
+                    'get': def():
+                        # console.log("@get TargetPosition")
+                        out("** Get: => Display: " + self.display + " / Target: " + self.target)
+                        return self.map_zway_to_hk(self.display)
+
+                    , 'set': def(value):
+
+                        current = self.vDev.get("metrics:level")
+
+                        if 0 < value < 100:
+                            self.target = self.display = self.map_hk_to_zway(value)
+                            out("** SetA: => Current: " + current + " / Display: " + self.display + " / Target: " + self.target)
+                            self.set_level(self.target)
+                            return
+
+                        # => if value == 0 or value == 100
+                        if self.trigger is None:
+                            self.display = self.map_hk_to_zway(value)
+                            self.trigger = _.delay(def():
+                                self.trigger = None
+                                self.target = self.display
+                                dev = devices.create(self.vDev)
+                                if dev?:
+                                    dev.commandClass.StopLevelChange(def():
+                                        self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                        dev.commandClass.Get(def():
+                                            current = self.vDev.get("metrics:level")
+                                            out("** SetB: => Current: " + current + " / Display: " + self.display + " / Target: " + self.target)
+                                            if current != self.target:      # this happens sometimes...
+                                                direction = 0 if self.target > current else 1 # 0 == up / 1 == down
+                                                dev.commandClass.StartLevelChange(direction, 0x00, True, 50, 0, 10, def():
+                                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                                0 if current > self.target else 1)
+
+                                            # level = 0xFF if self.target == 99 else self.target
+                                            # dev.commandClass.Set(level, 0xFF, def():
+                                            #     self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                            #                                 0 if current > self.target else 1)
+
+                                            )
+                                        )
+                                    )
+                            , 500)
+
+                        else:
+
+                            clearTimeout(self.trigger)
+                            self.trigger = None
+                            dev = devices.create(self.vDev)
+                            if dev?:
+                                dev.commandClass.StopLevelChange(def():
+                                    self.target = None
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+                                    dev.commandClass.Get(def():
+                                        self.display = self.vDev.get("metrics:level")
+                                        out("** SetClear: => Current: " + current + " / Display: " + self.display + " / Target: " + self.target)
+
+                                    )
+                                )
+
+                        return
+
+                    }
+                )
+
+            self.onPosition = def():
+                current = self.vDev.get("metrics:level")
+                out("** => onPosition: Current: " + current + " / Display: " + self.display + " / Target: " + self.target)
+                if self.target is None:
+                    self.display = current
+                elif abs(self.target - current) < 3:
+                    self.target = None
+                    self.display = current
+                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped
+
+                self.onLevelChange()
+
+
+            self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        Base.remove(self)
+
+
+class TargetPositionSimple(Base):
+
+    # SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING devices are operated via CommandClass Basic
+
+    def add_to_callback(self):
+
+        self.name = "Target Position"
+        c = None
+
+        # GENERIC_TYPE_WINDOW_COVERING devices sometimes (always?) seem to be configurable
+        # with respect to the travel time - in parameters 177 - 180
+        # We try to retrieve this to simulate adequate user feedback
+        self.get_config = def():
+            pDev = devices.pDevice(self.id)
+            if pDev?:
+                cc = pDev.commandClass(0x70)    # Configuration
+                try:
+                    u1 = cc.data["177"].val.value
+                    u2 = cc.data["178"].val.value
+                    d1 = cc.data["179"].val.value
+                    d2 = cc.data["180"].val.value
+                except:
+                    return
+
+                up = (256 * u1 + u2) * 0.1  # acc. Merten device manual => seconds
+                down = (256 * d1 + d2) * 0.1
+                self.timing = {"up": up, "down": down}
+            return
+
+        pDev = devices.pDevice(self.id)
+        if pDev?:
+            cc = pDev.commandClass(0x20)    # Basic
+            if cc?:
+                self.commandClass = cc
+                self.vDev = -1
+                self.timing = {"up": 20, "down": 20}
+
+                # GENERIC_TYPE_WINDOW_COVERING devices sometimes (always?) seem to be configurable
+                # with respect to the travel time - in parameters 177 - 180
+                # We try to retrieve this to simulate adequate user feedback
+                cc = pDev.commandClass(0x70)    # Configuration
+                if cc?:
+                    cc.Get(177)
+                    cc.Get(178)
+                    cc.Get(179)
+                    cc.Get(180, self.get_config)
+
+                self.sequence = [0x00, 0xFF, 0xFF, 0x00]    # down, stop, up, stop
+                self.state = 0
+                self.target = None
+                self.latest_command = 0x00
+                self.latest_travel_start = None
+
+                c = self.service.addCharacteristic(
+                    HomeKit.Characteristics.TargetPosition
+                    , "uint8"
+                    , {
+                        'get': def():
+                            if self.target is not None:
+                                return self.map_zway_to_hk(self.target)
+                            elif self.latest_command is not None:
+                                return self.map_zway_to_hk(self.latest_command)
+
+                            return 0    # whatever
+
+                        , 'set': def(value):
+
+                            time = v'new Date()'.getTime() # ms
+                            delta = time - self.latest_travel_start
+                            compare = self.timing.up if self.latest_command is 0xFF else self.timing.down
+
+                            if delta < compare * 1000:
+                                # new command received within pre-calculated travel time
+                                # ... triggers the stop - reverse sequence.
+                                self.state = (self.state + 1) % 4
+                                self.target = self.sequence[self.state]
+                                if self.target != self.latest_command:
+                                    # educated guess
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 3)  # Stopped anywhere
+                                else:
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                                1 if self.target == 0xFF else 0)  # up or down
+                                    _.delay(def():
+                                            self.target = None
+                                            # Stopped after travel time => @ end position
+                                            self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)
+                                        , (self.timing.up if self.target == 0xFF else self.timing.down) * 1000
+                                    )
+
+                                self.commandClass.Set(self.target)
+                                self.latest_command = self.target
+                                self.latest_travel_start = time
+                                return
+
+                            self.state = 2 if value >= 50 else 0
+                            self.target = self.sequence[self.state]
+                            self.latest_command = self.target
+                            self.bridge.controller.emit("B4KT:PositionState:" + self.id,
+                                                        1 if self.target == 0xFF else 0)  # up / down
+                            self.commandClass.Set(self.target)
+                            _.delay(def():
+                                    self.target = None
+                                    self.bridge.controller.emit("B4KT:PositionState:" + self.id, 2)  # Stopped @ end
+                                , (self.timing.up if self.target == 0xFF else self.timing.down) * 1000
+                            )
+
+
+                    }
+                )
+
+        return c
+
+
+class TargetTiltAngle(SlatSupport):
+
+    def __init__(self, bridge4kt, id):
+        SlatSupport.__init__(self, bridge4kt, id)
+        self.name = "Target Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetTiltAngle
+        self.detectType = {"deviceType": "switchMultilevel"}
+
+    def add_to_callback(self):
+
+        c = None
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+            pT = d.get("deviceType")        # this is to doublecheck in case we detect the device just by its tag
+            if pT == "switchMultilevel":
+                self.vDev = d
+                self.target = self.display = self.vDev.get("metrics:level")
+
+                self.performCommand = _.debounce(def(target):
+                    self.vDev.performCommand('exact', {"level": target})
+                , 500 )
+
+                c = self.service.addCharacteristic(
+                    self.type
+                    , "int"
+                    , {
+                        'get': def():
+                            return self.map_zway_to_hk(self.display)
+
+                        , 'set': def(position):
+                            v = self.map_hk_to_zway(position)
+                            self.target = self.display = v
+                            self.performCommand(v)
+                    }
+                )
+
+                self.onPosition = def():
+                    current = self.vDev.get("metrics:level")
+                    if self.target is None:
+                        self.display = current
+                    elif self.target == current:
+                        self.target = None
+
+                    self.onLevelChange()
+
+                self.vDev.on("change:metrics:level", self.onPosition)
+
+        return c
+
+    def remove(self):
+        if _.isObject(self.vDev):
+            self.vDev.off("change:metrics:level", self.onPosition)
+        SlatSupport.remove(self)
+
+
+class TargetHorizontalTiltAngle(TargetTiltAngle):
+    def __init__(self, bridge4kt, id):
+        TargetTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Target Horizontal Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetHorizontalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Horizontal"}
+
+
+class TargetVerticalTiltAngle(TargetTiltAngle):
+    def __init__(self, bridge4kt, id):
+        TargetTiltAngle.__init__(self, bridge4kt, id)
+        self.name = "Target Vertical Tilt Angle"
+        self.type = HomeKit.Characteristics.TargetVerticalTiltAngle
+        self.detectType = {"tags": "B4KT:Slat:Vertical"}

@@ -1,0 +1,299 @@
+from characteristics.base import Base, out
+import devices
+
+class CurrentHeatingCoolingState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "CurrentHeatingCoolingState"
+
+        c = None
+        self.vDev = -1
+        dev = devices.pDevice(self.id)
+
+        self.commandClass = dev.commandClass(0x40) # ThermostatMode
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        mode = self.commandClass.data.mode.value
+
+                        if (2 ** mode) & self.thermostat.heating:
+                            return 1    # Heating
+                        elif (2 ** mode) & self.thermostat.cooling:
+                            return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+            return c
+
+        self.commandClass = dev.commandClass(0x42) # Thermostat Operating State
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        state = self.commandClass.data.state.value
+
+                        if (2 ** state) & self.thermostat.heating:
+                            return 1    # Heating
+                        elif (2 ** state) & self.thermostat.cooling:
+                            return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+            return c
+
+        self.commandClass = dev.commandClass(0x43) # Thermostat SetPoint
+
+        if self.commandClass?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.CurrentHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        modemask = self.commandClass.data.modemask.value
+
+                        i = 0
+                        if modemask > 0:
+                            while v'modemask & 1 == 0':
+                                modemask = v'modemask >>> 1'
+                                i += 1
+                                if modemask == 0:
+                                    break
+
+                        if i > 0:
+                            if (2 ** i) & self.thermostat.heating:
+                                return 1    # Heating
+                            elif (2 ** i) & self.thermostat.cooling:
+                                return 2    # Cooling
+
+                        return 0    # Off
+                }
+            )
+
+        return c
+
+
+class TargetHeatingCoolingState(Base):
+
+    def add_to_callback(self):
+
+        self.name = "TargetHeatingCoolingState"
+
+        c = None
+        d = -1
+
+        dev = devices.pDevice(self.id)
+        self.state = 1  # Heating
+
+        cc =  dev.supportedCommandClass(0x40)  # ThermostatMode
+
+        if cc is not None:
+
+            self.commandClass = cc
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+                        return self.state
+
+                    , 'set': def(value):
+
+                        try:
+                            if value == 1:
+                                self.commandClass.Set(self.thermostat.heat)
+                            elif value == 2:
+                                self.commandClass.Set(self.thermostat.cool)
+                            elif value == 3:
+                                self.commandClass.Set(self.thermostat.auto)
+                            else:
+                                self.commandClass.Set(self.thermostat.off)
+
+                            self.state = value
+
+                        except:
+                            pass
+                }
+            )
+
+            return c
+
+        cc = dev.supportedCommandClass(0x43)  # ThermostatSetPoint
+
+        if cc is not None:
+            self.commandClass = cc
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetHeatingCoolingState
+                , "uint8"
+                , {
+                    'get': def():
+
+                        mode = self.commandClass.data.modemask.value
+
+                        if v'mode & self.thermostat.heating':
+                            return 1    # Heating
+                        elif v'mode & self.thermostat.cooling':
+                            return 2    # Cooling
+                        elif v'mode & self.thermostat.automatic':
+                            return 3    # Auto
+                        else:
+                            return 0    # Off
+                    , 'set': def():
+                        # There's nothing we can do here!
+                        return
+                }
+            )
+
+        return c
+
+
+class TargetTemperature(Base):
+
+    def add_to_callback(self):
+
+        self.name = "Target Temperature"
+        c = None
+
+        self.detectType = { "deviceType": "thermostat" }
+        d = self.perform_vDev_detection(self.detectType)
+        if d?:
+
+            self.vDev = d
+            # self.value = self.vDev.get("metrics:level")
+
+            # # override performCommand to catch the TargetTemperature from the setting operation
+            # self.perfCmd = self.override(self.vDev, 'performCommand', def(original):
+            #     that = self
+            #     return def(command):
+            #
+            #         if command == "exact":
+            #             level = arguments[1]
+            #             if level? and level.level?:
+            #                 that.value = parseFloat(level.level)
+            #
+            #         return original.apply(this, arguments)
+            # )
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TargetTemperature
+                , "float"
+                , {
+                    'get': def():
+                        return self.vDev.get("metrics:level")
+
+                    , 'set': def(value):
+                        # as of 20190112 this raises (with the Danfoss) due to a bug in Zwave/index.js
+                        # self.vDev.performCommand('exact', {"level": value})
+
+                        pD = devices.pDevice(self.id)
+                        cc = pD.supportedCommandClass(0x43)     # Thermostat SetPoint
+                        if cc is not None:
+                            mm = cc.data.modemask.value
+                            for t in self.thermostat:
+                                bit = v'1 << self.thermostat[t]'
+                                # we take the first mode that fits!
+                                if v'(mm & bit)' != 0:
+                                    mode = self.thermostat[t]
+                                    try:
+                                        min = cc.data[mode].min.value
+                                    except:
+                                        min = 0
+                                    try:
+                                        max = cc.data[mode].max.value
+                                    except:
+                                        max = 100
+
+                                    if min <= value <= max:
+                                        try:
+                                            cc.Set(mode, value)
+                                        except:
+                                            pass
+                                        else:
+                                            break
+                }
+            )
+
+        return c
+
+    # def remove(self):
+    #
+    #     # remove the "performCommand" override if we remove the device
+    #     if self.vDev? and self.perfCmd?:
+    #         self.override_reset(self.vDev, "performCommand", self.perfCmd)
+    #
+    #     Base.remove(self)
+
+
+class TemperatureDisplayUnits(Base):
+
+    def add_to_callback(self):
+
+        self.name = "TemperatureDisplayUnits"
+        c = None
+        self.vDev = -1
+
+        self.ccMode = devices.pDevice(self.id).commandClass(0x40)  # ThermostatMode
+        self.ccSetPoint = devices.pDevice(self.id).commandClass(0x43)  # ThermostatSetPoint
+        self.mode = None    # this is only used if HK tried to change the DisplayUnits
+
+        if self.ccMode? or self.ccSetPoint?:
+
+            c = self.service.addCharacteristic(
+                HomeKit.Characteristics.TemperatureDisplayUnits
+                , "uint8"
+                , {
+                    'get': def():
+
+                        # if HK ever tried to change the mode,
+                        # we return this setting - to ensure consistency
+                        if self.mode is not None:
+                            return self.mode
+
+                        # in all other cases: We return the true settings!
+
+                        mode = None
+                        if self.ccMode?:
+                            mode = self.ccMode.data.mode.value
+                        else:
+                            modemask = self.ccSetPoint.data.modemask.value
+                            i = 0
+                            if modemask > 0:
+                                while v'modemask & 1 == 0':
+                                    modemask = v'modemask >>> 1'
+                                    i += 1
+                                    if modemask == 0:
+                                        break
+
+                            if i > 0:
+                                mode = i
+
+                        if mode is not None:
+                            scale = self.ccSetPoint.data[self.mode].scaleString.value
+                            if scale? and scale == "°F":
+                                return 1
+
+                        return 0    # °C
+
+                    , 'set': def(value):
+                        self.mode = value
+                }
+            )
+
+        return c

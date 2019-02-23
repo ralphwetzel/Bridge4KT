@@ -1,0 +1,97 @@
+from characteristics.base import AccessoryIdentifier, Category, LinkQuality, Reachable
+from characteristics.battery import BatteryLevel, ChargingState, StatusLowBattery
+from characteristics.heating import (CurrentHeatingCoolingState, TargetHeatingCoolingState, TargetTemperature,
+                                     TemperatureDisplayUnits)
+from characteristics.lightbulb.rgb import (Brightness2RGB as BrightnessRGB, Hue, OnRGB, Saturation,
+                                           Identify as IdentifyRGB)
+from characteristics.lightbulb.white import (ColorTemperature, Brightness as BrightnessWhite, On as OnWhite,
+                                             Identify as IdentifyWhite)
+from characteristics.motor import (CurrentPositionB, CurrentPositionC, CurrentPositionSimple, CurrentSlatState,
+                                   CurrentTiltAngle, CurrentHorizontalTiltAngle, CurrentVerticalTiltAngle, HoldPosition,
+                                   PositionState, SlatType, SwingMode, TargetPositionA, TargetPositionB,
+                                   TargetPositionC, TargetPositionSimple, TargetTiltAngle, TargetHorizontalTiltAngle,
+                                   TargetVerticalTiltAngle)
+from characteristics.outlet import OutletInUse
+from characteristics.programmable_switch import ProgrammableSwitchEvent, ServiceLabelIndex, ServiceLabelNamespace
+from characteristics.sensor import (CarbonDioxideDetected, CarbonMonoxideDetected, ContactSensorState,
+                                    CurrentRelativeHumidity, CurrentTemperature, LeakDetected, MotionDetected,
+                                    OccupancyDetected, SmokeDetected, StatusActive, StatusFault, StatusTampered)
+from characteristics.shared import Brightness, Name, On
+
+def create(bridge4kt, realID, definition):
+
+    known_characteristics = {
+        "AccessoryIdentifier": AccessoryIdentifier,
+        "BatteryLevel": BatteryLevel,
+        "Brightness": Brightness,
+        "BrightnessRGB": BrightnessRGB,   # to calculate RGB to/from Brightness
+        # "BrightnessWhite": BrightnessWhite, # for white Lightbulbd only
+        "CarbonDioxideDetected": CarbonDioxideDetected,
+        # "CarbonDioxideLevel": CarbonDioxideLevel,
+        "CarbonMonoxideDetected": CarbonMonoxideDetected,
+        # "CarbonMonoxideLevel": CarbonMonoxideLevel,
+        # "CarbonMonoxidePeakLevel": CarbonMonoxidePeakLevel,
+        "Category": Category,
+        "ChargingState": ChargingState,
+        # "ColorTemperature": ColorTemperature,
+        "ContactSensorState": ContactSensorState,
+        "CurrentHeatingCoolingState": CurrentHeatingCoolingState,
+        "CurrentHorizontalTiltAngle": CurrentHorizontalTiltAngle,
+        "CurrentPositionA": CurrentPositionSimple,     # event based position determination
+        "CurrentPositionB": CurrentPositionB,   # SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
+        "CurrentPositionC": CurrentPositionC,   # SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
+        "CurrentPositionSimple": CurrentPositionSimple,     # event based position determination
+        # "CurrentPower": CurrentPower,
+        "CurrentSlatState": CurrentSlatState,
+        "CurrentTemperature": CurrentTemperature,
+        # "CurrentTemperatureThermostat": CurrentTemperatureThermostat,   # specific
+        "CurrentTemperatureThermostat": CurrentTemperature,   # specific
+        "CurrentTiltAngle": CurrentTiltAngle,
+        "CurrentVerticalTiltAngle": CurrentVerticalTiltAngle,
+        "HoldPosition": HoldPosition,
+        "Hue": Hue,
+        "IdentifyRGB": IdentifyRGB,
+        "IdentifyWhite": IdentifyWhite,
+        "LeakDetected": LeakDetected,
+        "LinkQuality": LinkQuality,
+        "MotionDetected": MotionDetected,   # as in ZWave.Me, this is the default for "general_purpose" binary sensors
+        "Name": Name,
+        "OccupancyDetected": OccupancyDetected,
+        "On": On,
+        "OnRGB": OnRGB,
+        "OnWhite": OnWhite,
+        "OutletInUse": OutletInUse,
+        "PositionState": PositionState,
+        "ProgrammableSwitchEvent": ProgrammableSwitchEvent,
+        "Reachable": Reachable,
+        "Saturation": Saturation,
+        "ServiceLabelIndex": ServiceLabelIndex,
+        "ServiceLabelNamespace": ServiceLabelNamespace,
+        "SlatType": SlatType,
+        "SmokeDetected": SmokeDetected,
+        "StatusActive": StatusActive,
+        "StatusFault": StatusFault,
+        "StatusLowBattery": StatusLowBattery,
+        "StatusTampered": StatusTampered,
+        "SwingMode": SwingMode,
+        "TargetHeatingCoolingState": TargetHeatingCoolingState,
+        "TargetHorizontalTiltAngle": TargetHorizontalTiltAngle,
+        "TargetPositionA": TargetPositionA, # SPECIFIC_TYPE_CLASS_A_MOTOR_CONTROL
+        "TargetPositionB": TargetPositionB, # SPECIFIC_TYPE_CLASS_B_MOTOR_CONTROL
+        "TargetPositionC": TargetPositionC, # SPECIFIC_TYPE_CLASS_C_MOTOR_CONTROL
+        "TargetPositionSimple": TargetPositionSimple,   # SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING, without any feedback
+        "TargetTiltAngle": TargetTiltAngle,
+        "TargetVerticalTiltAngle": TargetVerticalTiltAngle,
+        "TargetTemperature": TargetTemperature,
+        "TemperatureDisplayUnits": TemperatureDisplayUnits
+    }
+
+    # console.logJS(definition)
+
+    if definition in known_characteristics:
+        # 'new' is necessary here to explicitly advise RapydScript to create an object
+        c = new known_characteristics[definition](bridge4kt, realID)
+        return c
+
+    console.log(".. HK Characteristic '" + definition + "' not implemented")
+    return None

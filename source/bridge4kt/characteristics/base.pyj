@@ -1,0 +1,366 @@
+import homekit
+
+def out():
+    for key in arguments:
+        if _.isObject(arguments[key]):
+            arguments[key] = JSON.stringify(arguments[key])
+
+    debugPrint.apply(this, arguments)
+    return True
+
+
+class Base():
+
+    def __init__(self, bridge4kt, id):
+
+        # self.parent = parent
+        self.bridge = bridge4kt
+        self.id = id
+        # self.instance = instance or 0
+        self.name = ''
+
+        self.zway = v'global["zway"]'
+
+        self.vDev = None
+        # self.type = None
+
+        self.value = None
+
+        self.service = None
+        self.characteristic = None
+        self.detectType = None
+
+        self.alarm = {}
+        self.alarm.smoke = 0x01
+        self.alarm.co = 0x02
+        self.alarm.co2 = 0x03
+        self.alarm.heat = 0x04
+        self.alarm.water = 0x05
+        self.alarm.access = 0x06
+        self.alarm.burglar = 0x07
+        self.alarm.power = 0x08
+        self.alarm.system = 0x09
+        self.alarm.emergency = 0x0a
+        self.alarm.clock = 0x0b
+
+        self.thermostat = {}
+        self.thermostat.off = 0x00
+        self.thermostat.heat = 0x01
+        self.thermostat.cool = 0x02
+        self.thermostat.auto = 0x03
+        self.thermostat.standby = 0x04
+        self.thermostat.resume = 0x05
+        self.thermostat.fan = 0x06
+        self.thermostat.furnace = 0x07
+        self.thermostat.dryAir = 0x08
+        self.thermostat.moistAir = 0x09
+        self.thermostat.autoChange = 0x0a
+        self.thermostat.energySaveHeat = 0x0b
+        self.thermostat.energySaveCool = 0x0c
+        self.thermostat.awayHeat = 0x0d
+        self.thermostat.awayCool = 0x0e
+        self.thermostat.boost = 0x0f
+        self.thermostat.specific = 0x1f
+
+        self.thermostat.heating = ( 2 ** self.thermostat.heat +
+                                    2 ** self.thermostat.energySaveHeat +
+                                    2 ** self.thermostat.awayHeat +
+                                    2 ** self.thermostat.boost )
+
+        self.thermostat.cooling = ( 2 ** self.thermostat.cool +
+                                    2 ** self.thermostat.energySaveCool +
+                                    2 ** self.thermostat.awayCool )
+
+        self.thermostat.automatic = ( 2 ** self.thermostat.auto +
+                                      2 ** self.thermostat.standby +
+                                      2 ** self.thermostat.autoChange )
+
+
+        # send notification to HK
+        # don't forget to remove()
+        self.onLevelChange = def():
+            c = self.characteristic
+            if c is not None:
+                aid = c.service.accessory.aid
+                console.log(self.name + ": change:metrics:level @ " +
+                            aid + "." + self.characteristic.iid)
+                self.bridge.hk.update(aid, c.iid)
+
+        self.target = None
+        self.reset_target = _.debounce(def():
+            self.target = None
+        , 2500)
+
+    # def set_deviceType(self, deviceType):
+    #
+    #     if v'_.isArray(deviceType)' is False:
+    #         deviceType = [deviceType]
+    #
+    #     self.deviceType = deviceType
+
+    def get_real_dev(self, vDev):
+
+        # We're not interested in the vDev - yet in the Dev!
+        # This returns an Array: [match, group#1] or None
+        check = v'/(?:ZWayVDev_zway_)(\d+)(?:-.+)/'.exec(vDev.id)
+        if not check? or len(check) < 2:
+            return None
+
+        # console.log(check[1].toString())
+        return check[1]
+
+    def perform_vDev_detection(self, detectType):
+
+        # console.log("Detecting vDev...")
+
+        if not detectType?:
+            return None
+
+        vDev = None
+        # type = None
+
+        for testType in detectType:
+
+            # out(testType)
+
+            definition = detectType[testType]
+
+            if _.isArray(definition) is False:
+                definition = [definition]
+
+            controller = self.bridge.controller
+
+            for d in definition:
+
+                # Would it be better to operate with CommandClasses?
+                vDevList = controller.devices.filter(def(x):
+                    # console.log(x.get(testType) + " / " + d)
+                    check = x.get(testType)
+                    # out(check)
+                    if _.isArray(check):
+                        return True if d in check else False
+
+                    return check == d
+                )
+
+                # out(vDevList)
+
+                vDevList = vDevList.filter(def(x):
+                    realID = self.get_real_dev(x)
+                    return realID == self.id if realID? else False
+                )
+
+                # out(vDevList)
+
+                if len(vDevList) > 0:
+                    vDev = vDevList[0]
+                    # type = t
+                    break
+
+            if vDev is not None:
+                break
+
+        # console.logJS(vDev)
+
+        if vDev is not None:
+            # return { "vDev": vDev, "type": type }
+            return vDev
+
+        return None
+
+    def add_to(self, service: homekit.HKService) -> homekit.HKCharacteristic:
+
+        if self.characteristic?:
+            return self.characteristic
+
+        self.service = service
+
+        if self.add_to_callback?:
+            self.characteristic = self.add_to_callback()
+
+        if self.characteristic?:
+            console.log(".. HK Characteristic '" + self.name + "' added.")
+            return self.characteristic
+        elif not self.vDev?:
+            console.log(".. HK Characteristic '" + self.name + "': vDev not identified.")
+            return None
+        else:
+            console.log(".. Failed to add HK Characteristic '" + self.name + "'.")
+            return None
+
+    def update(self):
+
+        vDev = None
+        # type = None
+
+        vDev = self.perform_vDev_detection(self.detectType)
+
+        # console.logJS("update found: " + vDev)
+
+        if vDev?:
+            if self.vDev? and vDev.id != self.vDev.id:
+                if self.service? and self.characteristic?:
+                    # console.log(".. HK: Removing @'" + self.name + "' vDev '" + self.vDev.id + "' for '" + vDev.id + "'.")
+
+                    # console.log(self.characteristic.remove.toString())
+
+                    self.remove()
+
+                    # self.characteristic.remove()
+                    # self.characteristic = None
+                    # self.vDev = None
+
+            if not self.vDev?:
+                self.add_to(self.service)
+
+        else:
+            if self.vDev? and self.vDev != -1 and self.characteristic?:
+                console.log(".. HK: Removing @'" + self.name + "' vDev '" + self.vDev.id + "'.")
+
+                self.remove()
+
+                # self.characteristic.remove()
+                # self.characteristic = None
+                # self.vDev = None
+
+    def remove(self):
+
+        if self.characteristic?:
+            self.characteristic.remove()
+            self.characteristic = None
+
+        self.vDev = None
+
+        console.log(".. HK Characteristic '" + self.name + "' removed.")
+
+
+    def check_alarm_supported(self, alarm, mask):
+
+        if _.isArray(mask) is False:
+            mask = [mask]
+
+        i = 0
+        t = 0
+        for b in mask:
+            t += v'b << i*8'
+            i += 1
+
+        return v't & alarm' > 0
+
+    def override(self, object, methodName, callback):
+
+        m = object[methodName]
+        object[methodName] = callback(object[methodName])
+        return m
+
+    def override_reset(self, object, methodName, original):
+        m = object[methodName]
+        object[methodName] = original
+        return m
+
+    def map_hk_to_zway(self, position):
+        # position / hk: 0 ... 100% -> 101 steps
+        # value / zway: 0 ... 99 -> 100 steps
+        # => position / 101 * 100 = value
+        return Math.round(position / 1.01)
+
+    def map_zway_to_hk(selfself, value):
+
+        # 0xFE is a special value, returned by devices who are not position aware
+        if value == 0xFE:
+            return 50   # somewhere in between
+
+        # zway value may be > 99 (e.g. 0xFF as special value for 'fully open')
+        # hk doesn't like positions > 100
+        if value > 99: value = 99
+
+        # position / hk: 0 ... 100% -> 101 steps
+        # value / zway: 0 ... 99 -> 100 steps
+        # => value / 100 * 101 = position
+        return Math.round(value * 1.01)
+
+
+# ==========================
+
+class GetterSupport(Base):
+
+    def add_to_callback(self):
+
+        c = self.service.addCharacteristic(
+            self.type
+            , self.format
+            , {
+                'get': def():
+                    return self.value
+            }
+        )
+
+        return c
+
+
+# --------------------------
+
+
+class AccessoryIdentifier(GetterSupport):
+
+    def generateUUID(self):
+        return 'xxxxxxxx-xxxx-xxxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, def(c):
+            r = Math.random()*16|0
+            v = r if c == 'x' else v'(r & 0x3|0x8)'
+            return v.toString(16)
+        )
+
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "AccessoryIdentifier"
+        self.type = HomeKit.Characteristics.AccessoryIdentifier
+        self.format = "string"
+        self.value = self.generateUUID()
+
+
+class Category(GetterSupport):
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "Category"
+        self.type = HomeKit.Characteristics.Category
+        self.format = "uint16"
+        self.value = 1
+
+
+class LinkQuality(GetterSupport):
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "LinkQuality"
+        self.type = HomeKit.Characteristics.LinkQuality
+        self.format = "uint8"
+        self.value = 1
+
+
+class Reachable(GetterSupport):
+    def __init__(self, bridge4kt, id):
+        GetterSupport.__init__(self, bridge4kt, id)
+        self.name = "Reachable"
+        self.type = HomeKit.Characteristics.Reachable
+        self.format = "bool"
+        self.value = True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
