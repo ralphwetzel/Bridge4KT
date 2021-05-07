@@ -89,10 +89,10 @@ class Main(Base):
         self.name = "Bridge4KT"
         ac = Base.add_to(self, collection)
 
-        s = ac.addService("49FB9D4D-0FEA-4BF1-8FA6-E7B18AB86DCE", "Bridge4KT")
-        s.addCharacteristic(HomeKit.Characteristics.State, "uint8" , 0, ["pr", "ev"], {"maxValue":1, "minValue":0, "minStep":1})
-        s.addCharacteristic(HomeKit.Characteristics.Version, "string", "1.0", ["pr", "ev"])
-        s.addCharacteristic(HomeKit.Characteristics.ControlPoint, "data", "", ["pr", "pw", "ev"])
+        s = ac.addService(HomeKit.Services.HAPProtocolInformation, "Bridge4KT")
+        # s.addCharacteristic(HomeKit.Characteristics.State, "uint8" , 0, ["pr", "ev"], {"maxValue":1, "minValue":0, "minStep":1})
+        s.addCharacteristic(HomeKit.Characteristics.Version, "string", "1.2", ["pr", "ev"])
+        # s.addCharacteristic(HomeKit.Characteristics.ControlPoint, "data", "", ["pr", "pw", "ev"])
 
         return ac
 

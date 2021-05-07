@@ -5,9 +5,9 @@
   "homepage": "https://github.com/ralphwetzel/bridge4kt",
   "icon": "house.png",
   "moduleName": "Bridge4KT",
-  "version": "1.1",
-  "serial": "20190223|133148",
-  "tick": 1550925108949,
+  "version": "1.2",
+  "serial": "20210507|222258",
+  "tick": 1620418978543,
   "maturity": "stable",
   "repository": {
     "type": "git",
@@ -41,7 +41,8 @@
   "options": {
     "fields": {
       "name": {
-        "label": "__l_options__"
+        "label": "__l_options__",
+        "helper": "Hint: If your bridge doesn't shop up in the Home app, try altering this label. Sometimes this helps..."
       },
       "pin": {
         "label": "__l_pin__"

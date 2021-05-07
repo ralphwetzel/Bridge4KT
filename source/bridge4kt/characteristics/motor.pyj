@@ -314,6 +314,7 @@ class CurrentTiltAngle(SlatSupport):
     def remove(self):
         if _.isObject(self.vDev):
             self.vDev.off("change:metrics:level", self.onLevelChange)
+        Base.remove()
 
 
 class CurrentHorizontalTiltAngle(CurrentTiltAngle):
