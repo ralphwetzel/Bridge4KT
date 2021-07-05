@@ -5,9 +5,9 @@
   "homepage": "https://github.com/ralphwetzel/bridge4kt",
   "icon": "house.png",
   "moduleName": "Bridge4KT",
-  "version": "1.2",
-  "serial": "20210507|222258",
-  "tick": 1620418978543,
+  "version": "1.3",
+  "serial": "20210705|212953",
+  "tick": 1625513393627,
   "maturity": "stable",
   "repository": {
     "type": "git",

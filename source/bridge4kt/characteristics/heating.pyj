@@ -285,7 +285,7 @@ class TemperatureDisplayUnits(Base):
                                 mode = i
 
                         if mode is not None:
-                            scale = self.ccSetPoint.data[self.mode].scaleString.value
+                            scale = self.ccSetPoint.data[mode].scaleString.value
                             if scale? and scale == "°F":
                                 return 1
 
