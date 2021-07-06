@@ -7,6 +7,7 @@
   ,"04.08.04": "Thermostat"   // SPECIFIC_TYPE_SETPOINT_THERMOSTAT
   ,"04.09.00": "WindowCoveringSimple"  // GENERIC_TYPE_WINDOW_COVERING (deprecated)
   ,"04.09.01": "WindowCoveringSimple"  // SPECIFIC_TYPE_SIMPLE_WINDOW_COVERING (deprecated)
+  ,"04.10.01": "Switch" // SPECIFIC_TYPE_POWER_SWITCH_BINARY
   ,"04.11.01": "Lightbulb"  // SPECIFIC_TYPE_POWER_SWITCH_MULTILEVEL
   ,"04.11.02": "Lightbulb"  // SPECIFIC_TYPE_COLOR_TUNABLE_MULTILEVEL   <-- Educated guess! Raise hand if not working!
   ,"04.11.05": "WindowCovering"  // SPECIFIC_TYPE_CLASS_A_MOTOR_CONTROL
