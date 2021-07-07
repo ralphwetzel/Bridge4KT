@@ -1,7 +1,7 @@
 /*** Bridge4KT Z-Way HA module *******************************
  
  Author: Ralph Wetzel <bridge4kt@gmx.com>
- Version: 1.4
+ Version: 1.4.1
  Description:
    This module announces Z-Way HA devices to Apple HomeKit
  
@@ -7031,7 +7031,7 @@ return this.__repr__();
             if (_.isObject(self.vDev)) {
                 self.vDev.off("change:metrics:level", self.onLevelChange);
             }
-            SlatSupport.prototype.remove.call();
+            SlatSupport.prototype.remove.call(self);
         };
         CurrentTiltAngle.prototype.__repr__ = function __repr__ () {
             if(SlatSupport.prototype.__repr__) return SlatSupport.prototype.__repr__.call(this);
