@@ -96,9 +96,9 @@ class On(Base):
                     , 'set': def(value):
 
                         if (value == True) or (value == 1):
-                            v = 'on'
+                            v = True
                         else:
-                            v = 'off'
+                            v = False
 
                         self.vDev.performCommand(v)
                 }

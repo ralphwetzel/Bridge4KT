@@ -1,7 +1,7 @@
 /*** Bridge4KT Z-Way HA module *******************************
  
  Author: Ralph Wetzel <bridge4kt@gmx.com>
- Version: 1.4.2
+ Version: 1.4.3
  Description:
    This module announces Z-Way HA devices to Apple HomeKit
  
@@ -5403,9 +5403,9 @@ return this.__repr__();
                         var ρσ_anonfunc = function (value) {
                             var v;
                             if ((value === true || typeof value === "object" && ρσ_equals(value, true)) || (value === 1 || typeof value === "object" && ρσ_equals(value, 1))) {
-                                v = "on";
+                                v = true;
                             } else {
-                                v = "off";
+                                v = false;
                             }
                             self.vDev.performCommand(v);
                         };
@@ -10899,9 +10899,9 @@ return this.__repr__();
 
         function out() {
             var key;
-            var ρσ_Iter2 = ρσ_Iterable(arguments);
-            for (var ρσ_Index2 = 0; ρσ_Index2 < ρσ_Iter2.length; ρσ_Index2++) {
-                key = ρσ_Iter2[ρσ_Index2];
+            var ρσ_Iter0 = ρσ_Iterable(arguments);
+            for (var ρσ_Index0 = 0; ρσ_Index0 < ρσ_Iter0.length; ρσ_Index0++) {
+                key = ρσ_Iter0[ρσ_Index0];
                 if (_.isObject(arguments[(typeof key === "number" && key < 0) ? arguments.length + key : key])) {
                     arguments[(typeof key === "number" && key < 0) ? arguments.length + key : key] = JSON.stringify(arguments[(typeof key === "number" && key < 0) ? arguments.length + key : key]);
                 }
@@ -10940,14 +10940,14 @@ return this.__repr__();
             if (!(typeof devices !== "undefined" && devices !== null) || len(devices) < 1) {
                 return null;
             }
-            var ρσ_Iter3 = ρσ_Iterable(devices);
-            for (var ρσ_Index3 = 0; ρσ_Index3 < ρσ_Iter3.length; ρσ_Index3++) {
-                d = ρσ_Iter3[ρσ_Index3];
+            var ρσ_Iter1 = ρσ_Iterable(devices);
+            for (var ρσ_Index1 = 0; ρσ_Index1 < ρσ_Iter1.length; ρσ_Index1++) {
+                d = ρσ_Iter1[ρσ_Index1];
                 device = devices[(typeof d === "number" && d < 0) ? devices.length + d : d];
                 tags = device.tags;
-                var ρσ_Iter4 = ρσ_Iterable(tags);
-                for (var ρσ_Index4 = 0; ρσ_Index4 < ρσ_Iter4.length; ρσ_Index4++) {
-                    tag = ρσ_Iter4[ρσ_Index4];
+                var ρσ_Iter2 = ρσ_Iterable(tags);
+                for (var ρσ_Index2 = 0; ρσ_Index2 < ρσ_Iter2.length; ρσ_Index2++) {
+                    tag = ρσ_Iter2[ρσ_Index2];
                     t = str.split(tag, ":");
                     if (ρσ_equals(len(t), 1)) {
                         if (!(typeof primary !== "undefined" && primary !== null)) {
@@ -10983,9 +10983,9 @@ return this.__repr__();
                 }
             }
             if (len(skip) > 0) {
-                var ρσ_Iter5 = ρσ_Iterable(skip);
-                for (var ρσ_Index5 = 0; ρσ_Index5 < ρσ_Iter5.length; ρσ_Index5++) {
-                    s = ρσ_Iter5[ρσ_Index5];
+                var ρσ_Iter3 = ρσ_Iterable(skip);
+                for (var ρσ_Index3 = 0; ρσ_Index3 < ρσ_Iter3.length; ρσ_Index3++) {
+                    s = ρσ_Iter3[ρσ_Index3];
                     if ((primary === s || typeof primary === "object" && ρσ_equals(primary, s))) {
                         primary = null;
                     } else {
@@ -11046,9 +11046,9 @@ return this.__repr__();
                 definition = ρσ_list_decorate([ definition ]);
             }
             dd = ρσ_list_decorate([]);
-            var ρσ_Iter6 = ρσ_Iterable(definition);
-            for (var ρσ_Index6 = 0; ρσ_Index6 < ρσ_Iter6.length; ρσ_Index6++) {
-                d = ρσ_Iter6[ρσ_Index6];
+            var ρσ_Iter4 = ρσ_Iterable(definition);
+            for (var ρσ_Index4 = 0; ρσ_Index4 < ρσ_Iter4.length; ρσ_Index4++) {
+                d = ρσ_Iter4[ρσ_Index4];
                 if ((d === "Sensor" || typeof d === "object" && ρσ_equals(d, "Sensor"))) {
                     sensors = services.check_sensor_capabilities(self, pDev);
                     if (sensors !== null) {
@@ -11099,9 +11099,9 @@ return this.__repr__();
             }
             zway = global["zway"];
             config_text = "";
-            var ρσ_Iter7 = ρσ_Iterable(self.devices);
-            for (var ρσ_Index7 = 0; ρσ_Index7 < ρσ_Iter7.length; ρσ_Index7++) {
-                id = ρσ_Iter7[ρσ_Index7];
+            var ρσ_Iter5 = ρσ_Iterable(self.devices);
+            for (var ρσ_Index5 = 0; ρσ_Index5 < ρσ_Iter5.length; ρσ_Index5++) {
+                id = ρσ_Iter5[ρσ_Index5];
                 pDev = (ρσ_expr_temp = self.devices)[(typeof id === "number" && id < 0) ? ρσ_expr_temp.length + id : id];
                 data = (ρσ_expr_temp = zway.devices)[(typeof id === "number" && id < 0) ? ρσ_expr_temp.length + id : id].data;
                 name = data.givenName.value || "";
@@ -11112,14 +11112,14 @@ return this.__repr__();
                     cc += ((len(cc) > 0) ? " / " : "") + pDev.hashedFingerprint;
                 }
                 l = ρσ_list_decorate([]);
-                var ρσ_Iter8 = ρσ_Iterable(pDev.vDevices);
-                for (var ρσ_Index8 = 0; ρσ_Index8 < ρσ_Iter8.length; ρσ_Index8++) {
-                    d = ρσ_Iter8[ρσ_Index8];
+                var ρσ_Iter6 = ρσ_Iterable(pDev.vDevices);
+                for (var ρσ_Index6 = 0; ρσ_Index6 < ρσ_Iter6.length; ρσ_Index6++) {
+                    d = ρσ_Iter6[ρσ_Index6];
                     tags = (ρσ_expr_temp = pDev.vDevices)[(typeof d === "number" && d < 0) ? ρσ_expr_temp.length + d : d].tags;
                     if ((typeof tags !== "undefined" && tags !== null)) {
-                        var ρσ_Iter9 = ρσ_Iterable(tags);
-                        for (var ρσ_Index9 = 0; ρσ_Index9 < ρσ_Iter9.length; ρσ_Index9++) {
-                            tag = ρσ_Iter9[ρσ_Index9];
+                        var ρσ_Iter7 = ρσ_Iterable(tags);
+                        for (var ρσ_Index7 = 0; ρσ_Index7 < ρσ_Iter7.length; ρσ_Index7++) {
+                            tag = ρσ_Iter7[ρσ_Index7];
                             pos = l.indexOf(tag);
                             if ((pos === -1 || typeof pos === "object" && ρσ_equals(pos, -1))) {
                                 l.push(tag);
@@ -11257,9 +11257,9 @@ return this.__repr__();
 
                         return s;
                     } else if ((r.method === "PUT" || typeof r.method === "object" && ρσ_equals(r.method, "PUT")) && (r.path === "/characteristics" || typeof r.path === "object" && ρσ_equals(r.path, "/characteristics")) && r.data && r.data.characteristics) {
-                        var ρσ_Iter10 = ρσ_Iterable(r.data.characteristics);
-                        for (var ρσ_Index10 = 0; ρσ_Index10 < ρσ_Iter10.length; ρσ_Index10++) {
-                            c = ρσ_Iter10[ρσ_Index10];
+                        var ρσ_Iter8 = ρσ_Iterable(r.data.characteristics);
+                        for (var ρσ_Index8 = 0; ρσ_Index8 < ρσ_Iter8.length; ρσ_Index8++) {
+                            c = ρσ_Iter8[ρσ_Index8];
                             if (!_.isUndefined(c.value)) {
                                 characteristic = this.accessories.find(c.aid, c.iid);
                                 if (characteristic) {
@@ -11275,9 +11275,9 @@ return this.__repr__();
                     } else if ((r.method === "GET" || typeof r.method === "object" && ρσ_equals(r.method, "GET")) && ρσ_equals(r.path.slice(0, 20), "/characteristics?id=")) {
                         accessoriesCharacteristics = r.path.slice(20).split(",");
                         characteristics = ρσ_list_decorate([]);
-                        var ρσ_Iter11 = ρσ_Iterable(accessoriesCharacteristics);
-                        for (var ρσ_Index11 = 0; ρσ_Index11 < ρσ_Iter11.length; ρσ_Index11++) {
-                            ac = ρσ_Iter11[ρσ_Index11];
+                        var ρσ_Iter9 = ρσ_Iterable(accessoriesCharacteristics);
+                        for (var ρσ_Index9 = 0; ρσ_Index9 < ρσ_Iter9.length; ρσ_Index9++) {
+                            ac = ρσ_Iter9[ρσ_Index9];
                             item = (function() {
                                 var ρσ_Iter = ρσ_Iterable(ac.split(".")), ρσ_Result = [], i;
                                 for (var ρσ_Index = 0; ρσ_Index < ρσ_Iter.length; ρσ_Index++) {
@@ -11374,9 +11374,9 @@ return this.__repr__();
             self.controller.devices.off("created", self.onCreated);
             self.controller.devices.off("change:tags", self.onTags);
             self.controller.devices.off("change:metrics:title", self.hk.update);
-            var ρσ_Iter12 = ρσ_Iterable(self.devices);
-            for (var ρσ_Index12 = 0; ρσ_Index12 < ρσ_Iter12.length; ρσ_Index12++) {
-                id = ρσ_Iter12[ρσ_Index12];
+            var ρσ_Iter10 = ρσ_Iterable(self.devices);
+            for (var ρσ_Index10 = 0; ρσ_Index10 < ρσ_Iter10.length; ρσ_Index10++) {
+                id = ρσ_Iter10[ρσ_Index10];
                 device = (ρσ_expr_temp = self.devices)[(typeof id === "number" && id < 0) ? ρσ_expr_temp.length + id : id];
                 ac = device.accessory;
                 if ((typeof ac !== "undefined" && ac !== null)) {
