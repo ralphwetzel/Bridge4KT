@@ -1,7 +1,7 @@
 /*** Bridge4KT Z-Way HA module *******************************
  
  Author: Ralph Wetzel <bridge4kt@gmx.com>
- Version: 1.4.3
+ Version: 1.4.4
  Description:
    This module announces Z-Way HA devices to Apple HomeKit
  
@@ -5390,11 +5390,9 @@ return this.__repr__();
                 c = self.service.addCharacteristic(HomeKit.Characteristics.On, "bool", (function(){
                     var ρσ_d = {};
                     ρσ_d["get"] = function () {
-                        return self.vDev.get("metrics:level");
-                        if ((level === "on" || typeof level === "object" && ρσ_equals(level, "on"))) {
-                            return true;
-                        }
-                        if ((level === 99 || typeof level === "object" && ρσ_equals(level, 99))) {
+                        var level;
+                        level = self.vDev.get("metrics:level");
+                        if (ρσ_in(level, ρσ_list_decorate([ "on", 99, 255, true ]))) {
                             return true;
                         }
                         return false;
@@ -5403,9 +5401,9 @@ return this.__repr__();
                         var ρσ_anonfunc = function (value) {
                             var v;
                             if ((value === true || typeof value === "object" && ρσ_equals(value, true)) || (value === 1 || typeof value === "object" && ρσ_equals(value, 1))) {
-                                v = true;
+                                v = "on";
                             } else {
-                                v = false;
+                                v = "off";
                             }
                             self.vDev.performCommand(v);
                         };

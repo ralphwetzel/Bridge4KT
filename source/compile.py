@@ -5,7 +5,7 @@ import os
 header_text = """/*** Bridge4KT Z-Way HA module *******************************
  
  Author: Ralph Wetzel <bridge4kt@gmx.com>
- Version: 1.4.3
+ Version: 1.4.4
  Description:
    This module announces Z-Way HA devices to Apple HomeKit
  

@@ -85,10 +85,8 @@ class On(Base):
                 , "bool"
                 , {
                     'get': def():
-                        return self.vDev.get("metrics:level")
-                        if level == 'on':
-                            return True
-                        if level == 99:
+                        level = self.vDev.get("metrics:level")
+                        if level in ["on", 99, 0xFF, True]:
                             return True
 
                         return False
@@ -96,9 +94,9 @@ class On(Base):
                     , 'set': def(value):
 
                         if (value == True) or (value == 1):
-                            v = True
+                            v = "on"
                         else:
-                            v = False
+                            v = "off"
 
                         self.vDev.performCommand(v)
                 }
