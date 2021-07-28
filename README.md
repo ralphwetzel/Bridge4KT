@@ -31,6 +31,7 @@ The Apple HomeKit world knows a limited number of standard use cases that are su
 This latest version is able to bridge to the following accessories:
 
 - Door
+- Fan
 - Garage
 - Lightbulb
 - Outlet
@@ -96,7 +97,7 @@ The following tags may be applied to **any virtual device belonging to the physi
 |B4KT:*Capability*:Skip|`B4KT:TemperatureSensor:Skip`| To **remove** the capability *TemperaturSensor* (most probably pre-defined via the device database) from the list of capabilities of a device.|
 |`B4KT:Lightbulb:White`|| To operate a [lightbulb](#lightbulb) as *white color only* device.|
 
-> Please be adviced, that you have to apply both an **add** tag definition and a **remove** tag definition to switch the capability of a device.
+> Please be advised, that you have to apply both an **add** tag definition and a **remove** tag definition to switch the capability of a device.
 >
 > An example: To operate a device, detected by default  as *Smoke Sensor*, as *Temperature Sensor* only, you have to define
 >
@@ -108,12 +109,14 @@ The following tags have to be applied to **the virtual device that shall be used
 
 | Tag Definition|Use Case|
 |:----|:---|
+|`B4KT:Name`| To define that the label of this virtual device shall be used as HomeKit identifier.|
 |`B4KT:Slat:Horizontal`| To define that this virtual device is used to operate a horizontal slat.|
 |`B4KT:Slat:Vertical`| To define that this virtual device is used to operate a vertical slat.|
 |`B4KT:Slat:Minus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to -90°.|
 |`B4KT:Slat:Plus90`| To define that the slat operated by this virtual device has a tilt angle of 0° to +90°.|
 |`B4KT:Slat:Swing`| To define that the slat operated by this vertical device is a *swinging* slat.|
-
+|`B4KT:Switch:1`| To define that this virtual device should be considered as the first of several switches of this multi switch.|
+|`B4KT:Switch:n`| To define that this virtual device should be considered as the *n*-th of several switches of this multi switch.|
 
 ## Additional Information
 This section tries to provide some additional information that might be suitable to support you in your endeavours to setup *Bridge4KT* accordingly. If you're missing any detail or if you have further questions, please [raise an issue](https://github.com/ralphwetzel/Bridge4KT/issues) for clarification.
@@ -162,9 +165,18 @@ MCD(A) devices are - out of the box - neither aware of the endpoints nor positio
 Devices advertising the type *Simple Window Covering* are as well supported by *Bridge4KT*.
 
 ### Naming Conventions
-By default, *Bridge4KT* takes the name given to the physical device in Z-Way as HomeKit identifier.
+By default, *Bridge4KT* takes the name given to the physical device in Z-Wave.me as HomeKit identifier.
+
+If you define the tag `B4KT:Name` for any virtual device (associated with this pysical device), _Bridge4KT_ is using the label of this virtual device as HomeKit indentifier.
+
+In case you're operating a physical device combining several operational units (e.g. a double switch or a multi sensor), you may define `B4KT:Name` in combination with an index to reference the name to be given to the first (`B4KT:Name:1`) or n-th (`B4KT:Name:n`) device. 
 
 If this is a composed identifier, beginning with a term that equals the name of the room this device is associated to in HomeKit, then HomeKit will strip this portion of the identifier to create a nice label.
+
+Be advised, that HomeKit considers the name a device is propagating as a datum that shall never change. The user may give the device a different name - yet the device itself shall never touch it once published. Thus, when you decide to alter (via definition in Z-Wave.me) the name of a device already bridged into HomeKit, those changes will not be reflected in the Home app. In such a case, you may either accept this - or you need to toggle the inclusion of **the bridge** (delete the bridge, then add it again!) to reset HomeKit's memory setup.
+
+### Relay
+Refer to [Switch](#switch).
 
 ### RGBW Bulb
 Refer to [Lightbulb](#lightbulb).
@@ -185,6 +197,10 @@ The following sensor types are supported:
 - TemperatureSensor
 
 If you operate a sensor supporting multiple types, you may add those as a capability by adding a dedicated tag, e.g. `B4KT:TemperaturSensor`.
+
+### Switch
+Bridge4KT supports Single Switches as well as Double Switches (and even devices with more than two switching units - if they'd exist).
+To alter the sequence of the switching units of a dedicated device (in HomeKit), you may define a numbering tag, e.g. `B4KT:Switch:1` for the device to be considered as number 1 of its siblings.
 
 ### Window
 Refer to [Motor Control Device](#motor-control-device).

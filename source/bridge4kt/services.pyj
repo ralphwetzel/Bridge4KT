@@ -108,9 +108,14 @@ class Default(Base):
             c = characteristics_create(self.bridge, self.id, char)
             if c?:
                 self.characteristics[char] = c
-                c.add_to(self.service)
+                # c.add_to(self.service)
+                self.add_char_to_service(c, self.service)
 
         # console.log(self.service.serialize.toString())
+
+    # This allows patching of the characteristics creation process for service "Switch"
+    def add_char_to_service(self, char, service):
+        char.add_to(service)
 
     def replace_identify_of(self, service: HKService):
 
@@ -122,7 +127,8 @@ class Default(Base):
         if c?:
             # out("Identify created for " + self.id)
             self.characteristics[self.identify] = c
-            c.add_to(service)
+            # c.add_to(service)
+            self.add_char_to_service(c, service)
 
         return c
 
@@ -235,11 +241,15 @@ class Doorbell(Base):
     # Will be added on demand!
     pass
 
-class Fan(Base):
-    # Will be added on demand!
-    pass
+class Fan(Base):    # specified in R1
+    def __init__(self, bridge4kt, id):
+        Default.__init__(self, bridge4kt, id)
+        self.serviceID = HomeKit.Services.Fan
+        self.name = "Fan"
+        self.definition = ['On', 'Name']    # Rotation Direction & Rotation Speed not implemeted!
+        self.endPoint = None
 
-class FanV2(Base):
+class FanV2(Base):  # specified in R2
     # Will be added on demand!
     pass
 
@@ -414,7 +424,14 @@ class Switch(Default):
         self.serviceID = HomeKit.Services.Switch
         self.name = "Switch"
         self.definition = ['On', 'Name']
+        self.endPoint = None
 
+    # In case of MultiSwitches, an 'endPoint' will be defined for this service.
+    # We'll forward this to the 'On' characteristic ... and all other chars as well (even if they don't use it!).
+    def add_char_to_service(self, char, service):
+        if self.endPoint?:
+            char.endPoint = self.endPoint
+        char.add_to(service)
 
 class TemperatureSensor(Sensor):
     def __init__(self, bridge4kt, id):
@@ -526,6 +543,7 @@ def create(bridge4kt, realID, definition):
         'DoorC': DoorC,
         'DoorSimple': DoorSimple,
 
+        'Fan': Fan,
         'GarageDoorOpener': GarageDoorOpener,
         'HumiditySensor': HumiditySensor,
         'LeakSensor': LeakSensor,

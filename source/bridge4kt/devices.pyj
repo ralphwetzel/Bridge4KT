@@ -320,10 +320,13 @@ def create(vDev: Object) -> vDevice:
 
     return None
 
-def detect_vDev(controller, pID, detectType):
+def detect_vDev(controller, pID, detectType, returnList):
 
     if not (controller? and pID? and detectType?):
         return None
+
+    if ((not returnList?) or (returnList != True)):
+        returnList = False
 
     vDev = None
 
@@ -349,7 +352,7 @@ def detect_vDev(controller, pID, detectType):
             )
 
             if len(vDevList) > 0:
-                vDev = vDevList[0]
+                vDev = vDevList if returnList is True else vDevList[0]
                 # type = t
                 break
 

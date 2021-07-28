@@ -48,7 +48,23 @@ class Name(Base):
         self.name = "Name"
 
         c = None
-        self.vDev = -1
+        d = None
+        self.vDev = None
+
+        detectTypeList = []
+
+        # self.endPoint is set by service "Switch"
+        if self.endPoint?:
+            console.log(".. HK Characteristic '" + self.name + "' @ endPoint == " + self.endPoint)
+            detectTypeList.push("B4KT:Name:" + self.endPoint);
+
+        detectTypeList.push("B4KT:Name")
+
+        self.detectType = { "tags": detectTypeList }
+        d = self.perform_vDev_detection(self.detectType)
+
+        if d?:
+            self.vDev = d
 
         c = self.service.addCharacteristic(
             HomeKit.Characteristics.Name
@@ -56,9 +72,13 @@ class Name(Base):
             , {
                 'get': def():
                     name = None
-                    dev = self.zway.devices[self.id]
-                    if dev?:
-                        name = dev.data.givenName.value.toString()
+                    if self.vDev? and self.vDev != -1:
+                        console.log("Name with vDev")
+                        name = self.vDev.get("metrics:title").toString()
+                    else:
+                        dev = self.zway.devices[self.id]
+                        if dev?:
+                            name = dev.data.givenName.value.toString()
                     return name if name? else "Unnamed device"
             }
         )
@@ -71,9 +91,18 @@ class On(Base):
     def add_to_callback(self):
 
         self.name = "On"
-
         c = None
-        self.detectType = { "deviceType": "switchBinary" }
+
+        # For Switches with more than 1 physical switching unit, 'endPoint' is defined by the "Switch" service.
+        # If 'On' is added to non-Switch services, the default vDev detection by deviceType is used.
+
+        d = None
+        if self.endPoint?:
+            console.log(".. HK Characteristic '" + self.name + "' @ endPoint == " + self.endPoint)
+            self.detectType = { "tags": "B4KT:Switch:" + self.endPoint, "deviceType": "switchBinary:" + self.endPoint}
+        else:
+            self.detectType = { "deviceType": "switchBinary"}
+
         d = self.perform_vDev_detection(self.detectType)
 
         if d?:

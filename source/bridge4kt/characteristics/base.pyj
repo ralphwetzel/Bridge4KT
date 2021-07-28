@@ -131,6 +131,17 @@ class Base():
             controller = self.bridge.controller
 
             for d in definition:
+                endPoint = None
+
+                if testType == "deviceType":
+                    # Only for "deviceType" an endPoint number might be defined with "deviceType:endPoint" notation
+                    dspl = d.split(":")
+
+                    d = dspl[0]
+                    if len(dspl) > 1:
+                        endPoint = parseInt(dspl[1])
+
+                # console.log(testType, d, endPoint)
 
                 # Would it be better to operate with CommandClasses?
                 vDevList = controller.devices.filter(def(x):
@@ -153,9 +164,15 @@ class Base():
                 # out(vDevList)
 
                 if len(vDevList) > 0:
-                    vDev = vDevList[0]
-                    # type = t
-                    break
+                    # This is used by e.g. 'On' characteristic to support MultiSwitches
+                    if endPoint?:
+                        if endPoint > 0 and endPoint < len(vDevList):
+                            vDev = vDevList[endPoint]
+                            break
+                    else:
+                        vDev = vDevList[0]
+                        # type = t
+                        break
 
             if vDev is not None:
                 break
@@ -198,7 +215,7 @@ class Base():
         # console.logJS("update found: " + vDev)
 
         if vDev?:
-            if self.vDev? and vDev.id != self.vDev.id:
+            if (self.vDev? and vDev.id != self.vDev.id) or (not self.vDev?):
                 if self.service? and self.characteristic?:
                     # console.log(".. HK: Removing @'" + self.name + "' vDev '" + self.vDev.id + "' for '" + vDev.id + "'.")
 

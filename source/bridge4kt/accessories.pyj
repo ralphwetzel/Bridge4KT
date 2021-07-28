@@ -84,15 +84,24 @@ class Main(Base):
             "serial": bridge4kt.meta.serial
         }
 
+        console.log("Bridge4KT v" + bridge4kt.meta.version + " launched.")
+
     def add_to(self, collection: HKAccessoryCollection):
 
         self.name = "Bridge4KT"
         ac = Base.add_to(self, collection)
 
         s = ac.addService(HomeKit.Services.HAPProtocolInformation, "Bridge4KT")
-        # s.addCharacteristic(HomeKit.Characteristics.State, "uint8" , 0, ["pr", "ev"], {"maxValue":1, "minValue":0, "minStep":1})
+
+        # State was removed (by accident?) in zway-server 3.1.4
+        if HomeKit.Characteristics.State?:
+            s.addCharacteristic(HomeKit.Characteristics.State, "uint8" , 0, ["pr", "ev"], {"maxValue":1, "minValue":0, "minStep":1})
+
         s.addCharacteristic(HomeKit.Characteristics.Version, "string", "1.2", ["pr", "ev"])
-        # s.addCharacteristic(HomeKit.Characteristics.ControlPoint, "data", "", ["pr", "pw", "ev"])
+
+        # ControlPoint was removed (by accident?) in zway-server 3.1.4
+        if HomeKit.Characteristics.ControlPoint?:
+            s.addCharacteristic(HomeKit.Characteristics.ControlPoint, "data", "", ["pr", "pw", "ev"])
 
         return ac
 
@@ -101,7 +110,7 @@ class Creator(Base):
 
     # This are the known Accessory categories
     known_acc = [
-    #    "Fan",
+        "Fan",
         "Garage",
         "Lightbulb",
     #    "DoorLock",
@@ -195,6 +204,9 @@ class Creator(Base):
             # is named "StatelessProgrammableSwitch" @ the services
             self.name = "ProgrammableSwitch"
             is_primary = True
+        elif s.toLowerCase().indexOf('switch') > -1:
+            self.name = "Switch"
+            is_primary = True
         else:
             self.name = "Other"
 
@@ -214,6 +226,8 @@ class Creator(Base):
         # out(definition)
 
         for index, service in enumerate(definition):
+
+            s = None
 
             if service == "StatelessProgrammableSwitch":
                 detectType = {"deviceType": "sensorDiscrete"}
@@ -269,29 +283,48 @@ class Creator(Base):
                             self.services[service] = s
                             s.add_to(ac)
 
-            else:
+            elif service == "Switch":
+
+                # In case a single device provides several switching units (aka Fibaro DoubleSwitch),
+                # the service "Switch" will be created for each channel defined by MultiChannel command class.
+
+                pDev = devices.pDevice(self.id)
+                cc = pDev.commandClass(0x60)    # MultiChannel
+
+                if cc? and cc.data? and cc.data.endPoints?:
+                    endPoints = cc.data.endPoints.value
+                    if endPoints?:
+                        for eP in range(1, endPoints + 1):
+                            s = services.create(self.bridge, self.id, service)
+                            if s?:
+                                s.endPoint = eP
+                                self.services[service + '.' + eP] = s
+                                s.add_to(ac, index == 0 and is_primary is True)
+
+            if not s?:
                 s = services.create(self.bridge, self.id, service)
                 if s?:
                     self.services[service] = s
                     s.add_to(ac, index == 0 and is_primary is True)
 
-                    # If the primary service offers an identification routine...
-                    if index == 0 and is_primary is True:
-                        # out("Adding Identify...")
-                        # find the service "AccessoryInformation" (that was already created)
-                        for service in ac.services:
-                            # out(service.type)
-                            if service.type == HSAccessoryInformation:
-                                # find Characteristic "Identify"
-                                for char in service.characteristics:
-                                    # out(char.type)
-                                    if char.type == HCIdentify:
-                                        # Replace the standard implementation...
-                                        # ... with a dedicated one to provide an Identification Routine for the service
-                                        if s.replace_identify_of(service) is not None:
-                                            char.remove()
-                                        break
-                                break
+            if s?:
+                # If the primary service offers an identification routine...
+                if index == 0 and is_primary is True:
+                    # out("Adding Identify...")
+                    # find the service "AccessoryInformation" (that was already created)
+                    for service in ac.services:
+                        # out(service.type)
+                        if service.type == HSAccessoryInformation:
+                            # find Characteristic "Identify"
+                            for char in service.characteristics:
+                                # out(char.type)
+                                if char.type == HCIdentify:
+                                    # Replace the standard implementation...
+                                    # ... with a dedicated one to provide an Identification Routine for the service
+                                    if s.replace_identify_of(service) is not None:
+                                        char.remove()
+                                    break
+                            break
 
         return ac
 
