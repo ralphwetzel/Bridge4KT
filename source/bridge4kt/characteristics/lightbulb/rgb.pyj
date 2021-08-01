@@ -362,7 +362,7 @@ class OnRGB(RGBSupport):
             if _.isFunction(self.reset_target) and _.isFunction(self.reset_target.cancel):
                 self.reset_target.cancel()
 
-        RGBSupport.remove(self)
+        Base.remove(self)
 
 
 class Saturation(RGBSupport):
@@ -462,4 +462,4 @@ class Identify(RGBSupport):
 
 
     def remove(self):
-        RGBSupport.remove(self)
+        Base.remove(self)
